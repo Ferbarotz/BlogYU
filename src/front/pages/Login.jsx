@@ -1,25 +1,27 @@
+// src/front/pages/Login.jsx
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import getBackendURL from '../utils/backend';
 
 const Login = () => {
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  const handleChange = (e) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
+  const handleChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const BACKEND = getBackendURL();
+    setLoading(true);
     try {
-      const res = await fetch('https://miniature-winner-69wvjp9g5q673x6jp-5000.app.github.dev/api/login', {
+      const res = await fetch(`${BACKEND}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
@@ -29,58 +31,251 @@ const Login = () => {
       }
     } catch (error) {
       setMessage('Error de conexión con el servidor');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
-      <div className="bg-white p-8 rounded shadow-md w-full max-w-md">
+    <div
+      style={{ minHeight: "100vh", background: "#0d1117" }}
+      className="d-flex align-items-center justify-content-center p-4"
+    >
+      {/* Fondo decorativo */}
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+        background: "radial-gradient(ellipse at 20% 50%, rgba(0,242,254,0.05) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(79,172,254,0.05) 0%, transparent 60%)",
+        pointerEvents: "none"
+      }} />
 
-        {/* BOTÓN VOLVER AL INICIO */}
-        <div className="mb-4">
-          <Link to="/" className="text-green-600 hover:text-green-800 text-sm font-medium flex items-center">
-            <span className="mr-1">←</span> Volver al Inicio
+      <div style={{ width: "100%", maxWidth: "440px", position: "relative" }}>
+
+        {/* ── LOGO / TÍTULO ── */}
+        <div className="text-center mb-4">
+          <Link to="/" style={{ textDecoration: "none" }}>
+            <h2 className="fw-black mb-0" style={{ fontSize: "2.2rem", letterSpacing: "-1px", color: "#fff" }}>
+              Blog
+              <span style={{
+                background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
+              }}>
+                YU
+              </span>
+            </h2>
+            <p style={{ color: "#f9d423", letterSpacing: "4px", fontSize: "0.65rem", textTransform: "uppercase", marginTop: "2px" }}>
+              Comunidad Viajera
+            </p>
           </Link>
         </div>
 
-        <h2 className="text-2xl font-bold mb-6 text-center text-green-600">Iniciar Sesión</h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input 
-            name="email" 
-            type="email" 
-            placeholder="Correo Electrónico" 
-            onChange={handleChange} 
-            value={formData.email} 
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-green-400 outline-none" 
-            required 
-          />
-          <input 
-            name="password" 
-            type="password" 
-            placeholder="Contraseña" 
-            onChange={handleChange} 
-            value={formData.password} 
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-green-400 outline-none" 
-            required 
-          />
-          <button type="submit" className="w-full bg-green-600 text-white p-2 rounded font-bold hover:bg-green-700 transition shadow-md">
-            Entrar
-          </button>
-        </form>
+        {/* ── CARD ── */}
+        <div style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: "20px",
+          overflow: "hidden",
+          boxShadow: "0 25px 50px rgba(0,0,0,0.5)"
+        }}>
 
-        {message && <p className="mt-4 text-center text-red-500 font-medium">{message}</p>}
+          {/* Línea decorativa superior */}
+          <div style={{
+            height: "4px",
+            background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)"
+          }} />
 
-        {/* ENLACE PARA IR A REGISTRO */}
-        <div className="mt-6 text-center border-t pt-4">
-          <p className="text-gray-600 text-sm">
-            ¿Aún no tienes una cuenta? 
-            <Link to="/register" className="text-green-600 font-bold hover:underline ml-1">
-              Regístrate aquí
+          <div className="p-4 p-md-5">
+
+            <div className="mb-4">
+              <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem", textTransform: "uppercase", marginBottom: "6px" }}>
+                Acceso
+              </p>
+              <h3 className="fw-black text-white mb-1" style={{ fontSize: "1.8rem" }}>
+                ¡Bienvenido de vuelta! 👋
+              </h3>
+              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>
+                Inicia sesión para continuar explorando
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+
+              {/* EMAIL */}
+              <div className="mb-3">
+                <label style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "2px" }} className="d-block mb-2">
+                  Correo Electrónico
+                </label>
+                <div className="input-group">
+                  <span className="input-group-text border-end-0" style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(255,255,255,0.5)"
+                  }}>
+                    📧
+                  </span>
+                  <input
+                    name="email"
+                    type="email"
+                    placeholder="tu@email.com"
+                    onChange={handleChange}
+                    value={formData.email}
+                    required
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderLeft: "none",
+                      color: "#fff",
+                      borderRadius: "0 8px 8px 0",
+                      padding: "10px 14px",
+                      outline: "none"
+                    }}
+                    className="form-control"
+                    onFocus={(e) => e.target.style.borderColor = "rgba(0,242,254,0.4)"}
+                    onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+                  />
+                </div>
+              </div>
+
+              {/* CONTRASEÑA */}
+              <div className="mb-4">
+                <label style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "2px" }} className="d-block mb-2">
+                  Contraseña
+                </label>
+                <div className="input-group">
+                  <span className="input-group-text border-end-0" style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(255,255,255,0.5)"
+                  }}>
+                    🔒
+                  </span>
+                  <input
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Tu contraseña"
+                    onChange={handleChange}
+                    value={formData.password}
+                    required
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderLeft: "none",
+                      borderRight: "none",
+                      color: "#fff",
+                      padding: "10px 14px",
+                      outline: "none"
+                    }}
+                    className="form-control"
+                    onFocus={(e) => e.target.style.borderColor = "rgba(0,242,254,0.4)"}
+                    onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderLeft: "none",
+                      color: "rgba(255,255,255,0.5)",
+                      borderRadius: "0 8px 8px 0",
+                      padding: "0 14px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {showPassword ? "🙈" : "👁️"}
+                  </button>
+                </div>
+              </div>
+
+              {/* ERROR */}
+              {message && (
+                <div className="mb-3 py-2 px-3 text-center small rounded-3" style={{
+                  background: "rgba(255,78,80,0.15)",
+                  border: "1px solid rgba(255,78,80,0.3)",
+                  color: "#ff6b6b"
+                }}>
+                  ⚠️ {message}
+                </div>
+              )}
+
+              {/* BOTÓN */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn w-100 fw-bold"
+                style={{
+                  background: loading
+                    ? "rgba(255,255,255,0.1)"
+                    : "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                  border: "none", color: "#000",
+                  padding: "12px", fontSize: "0.95rem",
+                  borderRadius: "10px", letterSpacing: "1px",
+                  boxShadow: "0 0 20px rgba(0, 242, 254, 0.3)",
+                  transition: "all 0.3s ease"
+                }}
+                onMouseOver={(e) => !loading && (e.currentTarget.style.transform = "scale(1.02)")}
+                onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+              >
+                {loading ? (
+                  <><span className="spinner-border spinner-border-sm me-2"></span>Entrando...</>
+                ) : (
+                  "🔑 Iniciar Sesión"
+                )}
+              </button>
+            </form>
+
+            {/* SEPARADOR */}
+            <div className="d-flex align-items-center my-4">
+              <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
+              <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.75rem", margin: "0 12px" }}>¿Nuevo aquí?</span>
+              <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
+            </div>
+
+            {/* LINK REGISTRO */}
+            <Link
+              to="/register"
+              className="btn w-100 fw-bold"
+              style={{
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.15)",
+                color: "rgba(255,255,255,0.7)",
+                padding: "11px", fontSize: "0.9rem",
+                borderRadius: "10px", letterSpacing: "0.5px",
+                transition: "all 0.3s ease"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.borderColor = "rgba(0,242,254,0.4)";
+                e.currentTarget.style.color = "#00f2fe";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
+                e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+              }}
+            >
+              ✨ Crear cuenta nueva
             </Link>
-          </p>
+          </div>
         </div>
+
+        {/* FOOTER */}
+        <p className="text-center mt-4" style={{ color: "rgba(255,255,255,0.2)", fontSize: "0.75rem" }}>
+          BlogYU · Comunidad Viajera
+        </p>
       </div>
+
+     <style>{`
+  body { background: #0d1117 !important; }
+  input::placeholder { color: rgba(255,255,255,0.25) !important; }
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #1a1f2e inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    background-color: #1a1f2e !important;
+    caret-color: #ffffff !important;
+    transition: background-color 5000s ease-in-out 0s !important;
+  }
+`}</style>
     </div>
   );
 };
