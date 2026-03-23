@@ -1,6 +1,14 @@
-export const API_BASE = "https://miniature-winner-69wvjp9g5q673x6jp-5000.app.github.dev";
+// src/front/api/backend.js
+import { API_BASE, authHeaders as originalAuthHeaders } from "../../api/backend";
 
-export function authHeaders() {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+// Re-exportamos lo que ya viene configurado del archivo principal
+export { API_BASE };
+
+export const authHeaders = () => {
+    if (typeof originalAuthHeaders === 'function') return originalAuthHeaders();
+    const token = localStorage.getItem("token");
+    return {
+        "Content-Type": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    };
+};

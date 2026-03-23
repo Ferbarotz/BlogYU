@@ -1,81 +1,153 @@
-import React, { useState, useEffect } from "react";
+// src/front/components/Navbar.jsx
+import React from "react";
 import { Link, useNavigate } from "react-router-dom";
+import logo from "../assets/logo.png";
 
 const Navbar = () => {
-    const navigate = useNavigate();
-    const [token, setToken] = useState(localStorage.getItem("token"));
-    const [userName, setUserName] = useState("");
+  const navigate = useNavigate();
+  const token = localStorage.getItem("token");
+  const user = JSON.parse(localStorage.getItem("user") || "null");
 
-    const loadUserData = () => {
-        const storedToken = localStorage.getItem("token");
-        const storedUser = localStorage.getItem("user");
-        setToken(storedToken);
-        if (storedUser) {
-            const userObj = JSON.parse(storedUser);
-            setUserName(userObj.name || "Usuario");
-        }
-    };
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/login");
+  };
 
-    useEffect(() => {
-        loadUserData();
-        window.addEventListener("storage", loadUserData);
-        return () => window.removeEventListener("storage", loadUserData);
-    }, []);
+  return (
+    <nav
+      className="navbar navbar-expand-lg navbar-dark sticky-top"
+      style={{
+        background: "rgba(13,17,23,0.95)",
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid rgba(0,242,254,0.2)",
+        boxShadow: "0 4px 30px rgba(0,0,0,0.4)",
+        padding: "10px 0"
+      }}
+    >
+      <div className="container">
 
-    const handleLogout = () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        setToken(null);
-        navigate("/login");
-    };
-
-    return (
-        <nav className="bg-dark p-3 d-flex justify-content-between align-items-center shadow sticky-top">
-            <div className="h3 mb-0">
-                <Link to="/" className="text-white text-decoration-none font-weight-bold">
-                    Blog<span className="text-primary">YU</span>
-                </Link>
+        {/* LOGO */}
+        <Link className="navbar-brand d-flex align-items-center gap-2" to="/" style={{ textDecoration: "none" }}>
+          <img
+            src={logo}
+            alt="BlogYU Logo"
+            style={{
+              width: "60px",       // 👈 un poco más grande para que se vean las montañas
+              height: "60px",
+              objectFit: "contain",
+              // borderRadius: "12px"  👈 ELIMINADO para que no aparezca el cuadro blanco
+              filter: "drop-shadow(0 0 8px rgba(0,242,254,0.4))"
+            }}
+          />
+          <div className="d-flex flex-column justify-content-center" style={{ lineHeight: "1" }}>
+            <div>
+              <span style={{
+                fontSize: "1.8rem", fontWeight: "900", color: "#fff",
+                letterSpacing: "-1.5px", fontFamily: "'Inter', sans-serif",
+                textShadow: "0 0 20px rgba(255,255,255,0.1)"
+              }}>Blog</span>
+              <span style={{
+                fontSize: "1.8rem", fontWeight: "900",
+                background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                letterSpacing: "-1.5px", fontFamily: "'Inter', sans-serif",
+                filter: "drop-shadow(0 0 8px rgba(0,242,254,0.5))"
+              }}>YU</span>
             </div>
+            <small style={{
+              fontSize: "0.55rem", letterSpacing: "3px",
+              color: "#f9d423", textTransform: "uppercase", fontWeight: "800"
+            }}>Comunidad Viajera</small>
+          </div>
+        </Link>
 
-            <div className="d-flex align-items-center">
-                {!token ? (
-                    <>
-                        <Link to="/login" className="btn btn-outline-light me-2">Iniciar Sesión</Link>
-                        <Link to="/register" className="btn btn-primary">Crear Usuario</Link>
-                    </>
-                ) : (
-                    <>
-                        {/* Botón Perfil - Estilo Sólido */}
-                        <Link
-                            to="/profile"
-                            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm transition-all"
-                        >
-                            Perfil
-                        </Link>
-                        {/* Botón Mis Posts - Estilo Esquema/Borde */}
-                        <Link
-                            to="/my-posts"
-                            className="px-4 py-2 text-sm font-medium text-indigo-600 bg-white border border-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors"
-                        >
-                            Mis Posts
-                        </Link>
-                        {/* NUEVO BOTÓN: CREAR POST (Solo para logueados) */}
-                        <Link to="/new-post" className="btn btn-success me-3 d-flex align-items-center shadow-sm">
-                            <span className="me-1">+</span> Nuevo Post
-                        </Link>
+        <button className="navbar-toggler border-0" type="button"
+          data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          <span className="navbar-toggler-icon"></span>
+        </button>
 
+        <div className="collapse navbar-collapse" id="navbarNav">
+          <ul className="navbar-nav ms-auto align-items-center gap-2">
 
+            {token ? (
+              <>
+                <li className="nav-item">
+                  <Link className="nav-link nav-hover fw-bold" to="/my-posts">
+                    📝 Mis Posts
+                  </Link>
+                </li>
+                <li className="nav-item">
+                  <Link className="nav-link nav-hover fw-bold" to="/my-routes">
+                    🗺️ Mis Rutas
+                  </Link>
+                </li>
+                <li className="nav-item ms-2">
+                  <Link
+                    to="/profile"
+                    className="btn rounded-pill px-4 fw-bold d-flex align-items-center gap-2"
+                    style={{
+                      background: "rgba(0,242,254,0.08)",
+                      border: "1px solid rgba(0,242,254,0.4)",
+                      color: "#00f2fe", fontSize: "0.85rem",
+                      transition: "all 0.3s ease"
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.background = "rgba(0,242,254,0.18)"}
+                    onMouseOut={(e) => e.currentTarget.style.background = "rgba(0,242,254,0.08)"}
+                  >
+                    🌍 {user?.name || "Viajero"}
+                  </Link>
+                </li>
+                <li className="nav-item">
+                  <button
+                    onClick={handleLogout}
+                    className="btn rounded-pill px-3 btn-sm fw-bold"
+                    style={{
+                      background: "rgba(255,78,80,0.15)",
+                      border: "1px solid rgba(255,78,80,0.4)",
+                      color: "#ff4e50", fontSize: "0.8rem",
+                      transition: "all 0.3s ease"
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.background = "rgba(255,78,80,0.3)"}
+                    onMouseOut={(e) => e.currentTarget.style.background = "rgba(255,78,80,0.15)"}
+                  >
+                    Salir
+                  </button>
+                </li>
+              </>
+            ) : (
+              <>
+                <li className="nav-item">
+                  <Link className="nav-link nav-hover fw-bold" to="/login">Entrar</Link>
+                </li>
+                <li className="nav-item">
+                  <Link
+                    className="btn rounded-pill px-4 fw-bold text-dark"
+                    style={{
+                      background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+                      border: "none", fontSize: "0.9rem",
+                      boxShadow: "0 0 15px rgba(249,212,35,0.3)",
+                      transition: "all 0.3s ease"
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
+                    onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+                    to="/register"
+                  >
+                    ¡Unirme ahora!
+                  </Link>
+                </li>
+              </>
+            )}
+          </ul>
+        </div>
+      </div>
 
-
-
-                        <button onClick={handleLogout} className="btn btn-outline-danger btn-sm">
-                            Cerrar Sesión
-                        </button>
-                    </>
-                )}
-            </div>
-        </nav>
-    );
+      <style>{`
+        .nav-hover { color: rgba(255,255,255,0.8) !important; font-size: 0.85rem; letter-spacing: 0.5px; transition: all 0.3s ease; }
+        .nav-hover:hover { color: #00f2fe !important; transform: translateY(-1px); }
+      `}</style>
+    </nav>
+  );
 };
 
 export default Navbar;

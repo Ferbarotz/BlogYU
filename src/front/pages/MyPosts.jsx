@@ -1,149 +1,230 @@
+// src/front/pages/MyPosts.jsx
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
+import PostCard from "../components/PostCard";
 
+const DEFAULT_CATEGORIES = [
+  { id: "todos", name: "🌍 Todos" },
+  { id: "hoteles", name: "🏨 Hoteles" },
+  { id: "restaurantes", name: "🍽️ Restaurantes" },
+  { id: "bares", name: "🍹 Bares" },
+  { id: "lugares", name: "📍 Lugares" },
+  { id: "cultura", name: "🎭 Cultura" },
+  { id: "otros", name: "✨ Otros" }
+];
+
+const normalizeCategory = (cat) => {
+  if (!cat) return "";
+  if (typeof cat === "string") return cat.trim().toLowerCase();
+  if (typeof cat === "object" && cat !== null) return (cat.id || cat.name || "").toString().trim().toLowerCase();
+  return "";
+};
+
+const fixImage = (img) => {
+  if (!img) return null;
+  if (typeof img === "string" && img.startsWith("/")) return `${API_BASE}${img}`;
+  return img;
+};
+
+// ── PÁGINA PRINCIPAL ──
 const MyPosts = () => {
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const [posts, setPosts] = useState([]);
+  const [filtered, setFiltered] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [activeCategory, setActiveCategory] = useState("todos");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchMyPosts = async () => {
+    let mounted = true;
+    const fetchCategories = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/my-posts`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await fetch(`${API_BASE}/api/categories`);
+        if (!res.ok) throw new Error("no categories endpoint");
         const data = await res.json();
-        if (res.ok) setPosts(data);
+        if (!mounted) return;
+        if (Array.isArray(data) && data.length) {
+          const normalized = [{ id: "todos", name: "🌍 Todos" }].concat(
+            data.map(c => (typeof c === "string" ? { id: c, name: c } : { id: c.id ?? c.name, name: c.name ?? c.id }))
+          );
+          setCategories(normalized);
+        }
+      } catch (e) {
+        console.warn("Usando categorías por defecto.");
+      }
+    };
+    fetchCategories();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchMyPosts = async () => {
+      setLoading(true);
+      try {
+        const headers = { ...authHeaders() };
+        const res = await fetch(`${API_BASE}/api/my-posts`, { headers });
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          navigate("/login");
+          return;
+        }
+        if (!res.ok) {
+          const alt = await fetch(`${API_BASE}/api/posts?mine=true`, { headers });
+          if (!alt.ok) throw new Error("No se pudo cargar posts");
+          const altData = await alt.json();
+          if (!mounted) return;
+          setPosts(Array.isArray(altData) ? altData : altData.posts || []);
+        } else {
+          const data = await res.json();
+          if (!mounted) return;
+          setPosts(Array.isArray(data) ? data : data.posts || []);
+        }
       } catch (err) {
-        console.error(err);
+        console.error("Error cargando mis posts:", err);
+        if (mounted) setPosts([]);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
     fetchMyPosts();
-  }, []);
+    return () => { mounted = false; };
+  }, [navigate]);
 
-  const handleDelete = async (id) => {
-    if (!confirm("¿Eliminar esta publicación?")) return;
+  useEffect(() => {
+    if (activeCategory === "todos") setFiltered(posts);
+    else setFiltered(posts.filter(p => normalizeCategory(p.category) === activeCategory.toLowerCase()));
+  }, [activeCategory, posts]);
+
+  const handleDelete = async (postId) => {
+    if (!window.confirm("¿Eliminar esta publicación? Esta acción no se puede deshacer.")) return;
     try {
-      const res = await fetch(`${API_BASE}/api/posts/${id}`, {
+      const res = await fetch(`${API_BASE}/api/posts/${postId}`, {
         method: "DELETE",
-        headers: { ...authHeaders() }
+        headers: { ...authHeaders(), "Content-Type": "application/json" }
       });
-      if (res.ok) {
-        setPosts(posts.filter(p => p.id !== id));
-      } else {
-        const data = await res.json();
-        alert(data.msg || "Error al eliminar");
-      }
+      if (res.ok) setPosts(prev => prev.filter(p => String(p.id) !== String(postId)));
     } catch (err) {
-      console.error(err);
-      alert("Error de conexión");
+      console.error("Error al eliminar:", err);
     }
   };
 
-  const defaultImage = "https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=800&q=80";
+  if (loading) return (
+    <div className="d-flex flex-column align-items-center justify-content-center" style={{ minHeight: "60vh", background: "#0d1117" }}>
+      <div className="spinner-border mb-3" style={{ color: "#00f2fe", width: "3rem", height: "3rem" }}></div>
+      <p style={{ color: "#00f2fe", letterSpacing: "3px", fontSize: "0.8rem", textTransform: "uppercase" }}>
+        Cargando tus publicaciones...
+      </p>
+    </div>
+  );
 
   return (
-    <div className="container py-5" style={{ maxWidth: "900px" }}>
-      {/* Encabezado */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-        <h2 className="fw-bold mb-0">Mis Publicaciones</h2>
-        <Link
-          to="/new-post"
-          className="btn btn-success btn-sm"
+    <div style={{ background: "#0d1117", minHeight: "100vh" }}>
+
+      {/* ── HEADER ── */}
+      <div className="text-center text-white" style={{
+        background: "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)",
+        padding: "50px 20px 40px", position: "relative"
+      }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "4px", background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)" }} />
+        <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem", textTransform: "uppercase", marginBottom: "8px" }}>
+          Tu espacio viajero
+        </p>
+        <h1 className="fw-black mb-2" style={{ fontSize: "2.5rem", letterSpacing: "-1px" }}>
+          Mis{" "}
+          <span style={{ background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            Publicaciones
+          </span>
+        </h1>
+        <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.95rem", marginBottom: "24px" }}>
+          Gestiona y comparte tus experiencias con la comunidad
+        </p>
+        <button
+          onClick={() => navigate("/new-post")}
+          className="btn fw-bold rounded-pill shadow-lg"
+          style={{
+            background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+            border: "none", color: "#000", padding: "10px 30px",
+            fontSize: "0.9rem", letterSpacing: "1px",
+            boxShadow: "0 0 20px rgba(0, 242, 254, 0.3)", transition: "all 0.3s ease"
+          }}
+          onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
+          onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
         >
-          + Nueva publicación
-        </Link>
+          + Nueva Publicación
+        </button>
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px", background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
       </div>
 
-      {/* Estados */}
-      {loading ? (
-        <p className="text-muted">Cargando...</p>
-      ) : posts.length === 0 ? (
-        <p className="text-muted">No tienes publicaciones aún.</p>
-      ) : (
-        /* Lista de posts */
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {posts.map(p => {
-            let img = p.image;
-            if (img && img.startsWith("/")) img = `${API_BASE}${img}`;
+      {/* ── CONTENIDO ── */}
+      <div className="container py-5" style={{ maxWidth: "1200px" }}>
 
-            return (
-              <div
-                key={p.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "16px",
-                  padding: "12px 16px",
-                  border: "1px solid #e0e0e0",
-                  borderRadius: "10px",
-                  backgroundColor: "#fff",
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.06)"
-                }}
-              >
-                {/* Imagen pequeña */}
-                <img
-                  src={img || defaultImage}
-                  alt={p.title}
-                  onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
-                  style={{
-                    width: "70px",
-                    height: "70px",
-                    objectFit: "cover",
-                    borderRadius: "8px",
-                    flexShrink: 0
-                  }}
-                />
-
-                {/* Título y fecha */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    className="fw-bold mb-0"
-                    style={{
-                      fontSize: "1rem",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis"
-                    }}
-                  >
-                    {p.title}
-                  </p>
-                  <p className="text-muted mb-0" style={{ fontSize: "0.75rem" }}>
-                    {new Date(p.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-
-                {/* Botones */}
-                <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-                  <button
-                    onClick={() => navigate(`/posts/${p.id}`)}
-                    className="btn btn-outline-primary btn-sm"
-                  >
-                    Leer
-                  </button>
-                  <button
-                    onClick={() => navigate(`/posts/${p.id}/edit`)}
-                    className="btn btn-warning btn-sm"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    className="btn btn-danger btn-sm"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        {/* CATEGORÍAS */}
+        <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className="btn rounded-pill px-4 fw-bold"
+              style={
+                activeCategory === cat.id
+                  ? { background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000", boxShadow: "0 0 15px rgba(0, 242, 254, 0.4)" }
+                  : { background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)" }
+              }
+            >
+              {cat.name}
+            </button>
+          ))}
         </div>
-      )}
+
+        {/* TÍTULO SECCIÓN */}
+        <div className="d-flex align-items-center mb-4">
+          <div style={{ height: "2px", flex: 1, background: "linear-gradient(to right, transparent, rgba(0,242,254,0.3))" }} />
+          <span className="mx-3 fw-bold text-uppercase" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "3px", fontSize: "0.75rem" }}>
+            {activeCategory === "todos" ? "Todas mis publicaciones" : `Mis posts · ${activeCategory}`}
+          </span>
+          <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
+        </div>
+
+        {/* LISTADO */}
+        {filtered.length === 0 ? (
+          <div className="text-center py-5">
+            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>
+              No tienes publicaciones en "{activeCategory}" todavía.
+            </p>
+            <button
+              onClick={() => navigate("/new-post")}
+              className="btn fw-bold rounded-pill mt-3"
+              style={{
+                background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                border: "none", color: "#000", padding: "10px 30px",
+                boxShadow: "0 0 20px rgba(0, 242, 254, 0.3)"
+              }}
+            >
+              ¡Crea tu primera publicación!
+            </button>
+          </div>
+        ) : (
+          <div className="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+            {filtered.map(post => (
+              <div className="col" key={post.id}>
+                <PostCard
+                  post={post}
+                  onView={() => navigate(`/posts/${post.id}`)}
+                  onEdit={() => navigate(`/edit-post/${post.id}`)}
+                  onDelete={() => handleDelete(post.id)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <style>{`body { background: #0d1117 !important; }`}</style>
     </div>
   );
 };
 
-export default MyPosts;
+export default MyPosts; 
