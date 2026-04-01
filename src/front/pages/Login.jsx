@@ -221,6 +221,12 @@ const Login = () => {
                   "🔑 Iniciar Sesión"
                 )}
               </button>
+
+              <p className="text-center mt-3">
+                <a href="/forgot-password" style={{ color: '#4facfe', textDecoration: 'underline' }}>
+                  ¿Olvidaste tu contraseña?
+                </a>
+              </p>
             </form>
 
             {/* SEPARADOR */}
@@ -262,7 +268,7 @@ const Login = () => {
         </p>
       </div>
 
-     <style>{`
+      <style>{`
   body { background: #0d1117 !important; }
   input::placeholder { color: rgba(255,255,255,0.25) !important; }
   input:-webkit-autofill,

@@ -89,7 +89,7 @@ const NewPost = () => {
       fd.append("title",    title);
       fd.append("content",  content);
       fd.append("category", category);
-      imageFiles.forEach(f => fd.append("images", f)); // solo la portada
+      imageFiles.forEach(f => fd.append("images", f));
 
       const res = await fetch(`${API_BASE}/api/posts`, {
         method: "POST",
@@ -103,7 +103,6 @@ const NewPost = () => {
         return;
       }
 
-      const newPostId = data.id || data.post?.id;
       navigate("/");
     } catch (err) {
       console.error("Error creando post:", err);
@@ -116,32 +115,28 @@ const NewPost = () => {
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
 
-      {/* HEADER */}
+      {/* HEADER - same style as MyPosts */}
       <div className="text-center text-white" style={{
         background: "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)",
         padding: "50px 20px 40px", position: "relative"
       }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "4px",
-          background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)" }} />
-        <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem",
-          textTransform: "uppercase", marginBottom: "8px" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "4px", background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)" }} />
+        <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem", textTransform: "uppercase", marginBottom: "8px" }}>
           Comparte tu experiencia
         </p>
         <h1 className="fw-black mb-2" style={{ fontSize: "2.5rem", letterSpacing: "-1px" }}>
           Nueva{" "}
-          <span style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          <span style={{ background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
             Publicación
           </span>
         </h1>
         <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.95rem" }}>
           Cuenta tu historia a la comunidad viajera
         </p>
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px",
-          background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px", background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
       </div>
 
-      {/* FORMULARIO */}
+      {/* FORM */}
       <div className="container py-5" style={{ maxWidth: "860px" }}>
         <form onSubmit={handleSubmit}>
 
@@ -157,9 +152,7 @@ const NewPost = () => {
 
           {/* TÍTULO */}
           <div style={{ marginBottom: "20px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase",
-              marginBottom: "8px", display: "block" }}>
+            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px", display: "block" }}>
               Título *
             </label>
             <input
@@ -167,21 +160,19 @@ const NewPost = () => {
               onChange={e => setTitle(e.target.value)}
               placeholder="Dale un título llamativo a tu publicación..."
               style={{
-                width: "100%", background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
+                width: "100%", background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px",
                 color: "#fff", padding: "14px 18px", fontSize: "1rem",
                 outline: "none", boxSizing: "border-box", transition: "border 0.2s"
               }}
-              onFocus={e => e.target.style.border = "1px solid rgba(249,212,35,0.5)"}
-              onBlur={e  => e.target.style.border = "1px solid rgba(255,255,255,0.1)"}
+              onFocus={e => e.target.style.border = "1px solid rgba(0,242,254,0.45)"}
+              onBlur={e  => e.target.style.border = "1px solid rgba(255,255,255,0.06)"}
             />
           </div>
 
-          {/* CATEGORÍA */}
+          {/* CATEGORÍA - same style as MyPosts */}
           <div style={{ marginBottom: "20px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase",
-              marginBottom: "10px", display: "block" }}>
+            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "10px", display: "block" }}>
               Categoría *
             </label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
@@ -193,12 +184,10 @@ const NewPost = () => {
                   style={{
                     padding: "8px 18px", borderRadius: "20px", fontSize: "0.82rem",
                     cursor: "pointer", transition: "all 0.2s",
-                    background: category === c.id
-                      ? "linear-gradient(135deg, #f9d423, #ff4e50)"
-                      : "rgba(255,255,255,0.05)",
+                    background: category === c.id ? "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)" : "transparent",
                     border: category === c.id ? "none" : "1px solid rgba(255,255,255,0.12)",
-                    color: category === c.id ? "#000" : "rgba(255,255,255,0.6)",
-                    fontWeight: category === c.id ? "700" : "400"
+                    color: category === c.id ? "#000" : "rgba(255,255,255,0.65)",
+                    fontWeight: category === c.id ? "700" : "500"
                   }}
                 >
                   {c.name}
@@ -209,9 +198,7 @@ const NewPost = () => {
 
           {/* CONTENIDO */}
           <div style={{ marginBottom: "20px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase",
-              marginBottom: "8px", display: "block" }}>
+            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px", display: "block" }}>
               Contenido *
             </label>
             <textarea
@@ -220,53 +207,51 @@ const NewPost = () => {
               rows={7}
               placeholder="Describe tu experiencia, consejos, recomendaciones..."
               style={{
-                width: "100%", background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
+                width: "100%", background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.06)", borderRadius: "12px",
                 color: "#fff", padding: "14px 18px", fontSize: "0.95rem",
                 outline: "none", resize: "vertical", boxSizing: "border-box",
                 lineHeight: "1.6", transition: "border 0.2s"
               }}
-              onFocus={e => e.target.style.border = "1px solid rgba(249,212,35,0.5)"}
-              onBlur={e  => e.target.style.border = "1px solid rgba(255,255,255,0.1)"}
+              onFocus={e => e.target.style.border = "1px solid rgba(0,242,254,0.45)"}
+              onBlur={e  => e.target.style.border = "1px solid rgba(255,255,255,0.06)"}
             />
-            <div style={{ textAlign: "right", color: "rgba(255,255,255,0.25)",
-              fontSize: "0.75rem", marginTop: "4px" }}>
+            <div style={{ textAlign: "right", color: "rgba(255,255,255,0.25)", fontSize: "0.75rem", marginTop: "4px" }}>
               {content.length} caracteres
             </div>
           </div>
 
-          {/* FOTOS */}
+          {/* FOTOS - big dashed area like MyPosts image (no thumbnails initially) */}
           <div style={{ marginBottom: "28px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase",
-              marginBottom: "8px", display: "block" }}>
+            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px", display: "block" }}>
               Fotos{" "}
-              <span style={{ color: "rgba(255,255,255,0.35)", fontWeight: 400,
-                textTransform: "none", letterSpacing: 0 }}>
+              <span style={{ color: "rgba(255,255,255,0.35)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
                 ({imageFiles.length}/{MAX_PHOTOS})
               </span>
             </label>
 
-            {imageFiles.length < MAX_PHOTOS && (
+            {previews.length === 0 ? (
               <div
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 onClick={() => document.getElementById("photoInput").click()}
                 style={{
-                  border: dragOver ? "2px dashed #f9d423" : "2px dashed rgba(255,255,255,0.15)",
-                  borderRadius: "16px", padding: "32px 20px",
-                  textAlign: "center", cursor: "pointer",
-                  background: dragOver ? "rgba(249,212,35,0.05)" : "rgba(255,255,255,0.02)",
-                  transition: "all 0.2s", marginBottom: "16px"
+                  border: dragOver ? "2px dashed rgba(249,212,35,0.9)" : "2px dashed rgba(255,255,255,0.12)",
+                  borderRadius: "12px",
+                  padding: "42px 20px",
+                  textAlign: "center",
+                  cursor: "pointer",
+                  color: "rgba(255,255,255,0.6)",
+                  marginBottom: "16px",
+                  background: "rgba(255,255,255,0.01)"
                 }}
               >
-                <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>📸</div>
-                <p style={{ color: "rgba(255,255,255,0.5)", margin: 0, fontSize: "0.9rem" }}>
-                  Arrastra fotos aquí o{" "}
-                  <span style={{ color: "#f9d423", fontWeight: 600 }}>haz clic para seleccionar</span>
+                <div style={{ fontSize: "2.6rem", marginBottom: "10px", color: "rgba(255,255,255,0.8)" }}>📷</div>
+                <p style={{ margin: 0, fontSize: "0.95rem", color: "rgba(255,255,255,0.6)" }}>
+                  Arrastra fotos aquí o <span style={{ color: "#f9d423", fontWeight: 700 }}>haz clic para seleccionar</span>
                 </p>
-                <p style={{ color: "rgba(255,255,255,0.25)", margin: "6px 0 0", fontSize: "0.75rem" }}>
+                <p style={{ color: "rgba(255,255,255,0.28)", marginTop: "8px", fontSize: "0.8rem" }}>
                   Máximo {MAX_PHOTOS} fotos · JPG, PNG, WEBP
                 </p>
                 <input
@@ -278,23 +263,20 @@ const NewPost = () => {
                   onChange={e => addFiles(e.target.files)}
                 />
               </div>
-            )}
-
-            {previews.length > 0 && (
+            ) : (
+              // If there are previews, show them in the same grid used before
               <div style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-                gap: "10px"
+                gap: "10px",
+                marginBottom: "12px"
               }}>
                 {previews.map((src, i) => (
-                  <div key={i} style={{
-                    position: "relative", borderRadius: "10px",
-                    overflow: "hidden", aspectRatio: "1"
-                  }}>
+                  <div key={i} style={{ position: "relative", borderRadius: "10px", overflow: "hidden", aspectRatio: "1" }}>
                     <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     <div style={{
                       position: "absolute", top: "6px", left: "6px",
-                      background: "rgba(0,0,0,0.6)", color: "#f9d423",
+                      background: "rgba(0,0,0,0.6)", color: "#00f2fe",
                       fontSize: "0.65rem", padding: "2px 7px",
                       borderRadius: "10px", fontWeight: 700
                     }}>
@@ -317,7 +299,7 @@ const NewPost = () => {
                     {i === 0 && (
                       <div style={{
                         position: "absolute", bottom: "6px", left: "6px",
-                        background: "rgba(249,212,35,0.9)", color: "#000",
+                        background: "#00f2fe", color: "#00122a",
                         fontSize: "0.6rem", padding: "2px 7px",
                         borderRadius: "10px", fontWeight: 700
                       }}>
@@ -330,34 +312,38 @@ const NewPost = () => {
             )}
           </div>
 
-          {/* BOTONES */}
+          {/* BUTTONS - Publish styled like MyPosts header button */}
           <div style={{ display: "flex", gap: "12px" }}>
             <button
               type="submit"
               disabled={saving}
+              className="btn fw-bold rounded-pill"
               style={{
-                flex: 1, padding: "14px", borderRadius: "30px",
-                background: saving
-                  ? "rgba(249,212,35,0.4)"
-                  : "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
-                border: "none", color: "#000", fontWeight: 800,
-                fontSize: "0.95rem", cursor: saving ? "not-allowed" : "pointer",
-                letterSpacing: "1px", transition: "all 0.3s",
-                boxShadow: saving ? "none" : "0 0 20px rgba(249,212,35,0.3)"
+                flex: 1,
+                background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                border: "none",
+                color: "#000",
+                padding: "14px 20px",
+                fontSize: "1rem",
+                letterSpacing: "1px",
+                boxShadow: "0 0 20px rgba(0, 242, 254, 0.25)",
+                cursor: saving ? "not-allowed" : "pointer"
               }}
             >
               {saving ? "⏳ Publicando..." : "🚀 Publicar"}
             </button>
+
             <button
               type="button"
               onClick={() => navigate(-1)}
               disabled={saving}
               style={{
-                padding: "14px 28px", borderRadius: "30px",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.15)",
-                color: "rgba(255,255,255,0.6)", fontWeight: 600,
-                fontSize: "0.9rem", cursor: saving ? "not-allowed" : "pointer"
+                padding: "12px 22px",
+                borderRadius: "30px",
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.08)",
+                color: "rgba(255,255,255,0.7)",
+                cursor: saving ? "not-allowed" : "pointer"
               }}
             >
               Cancelar

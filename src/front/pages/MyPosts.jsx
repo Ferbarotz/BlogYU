@@ -215,6 +215,7 @@ const MyPosts = () => {
                   onView={() => navigate(`/posts/${post.id}`)}
                   onEdit={() => navigate(`/edit-post/${post.id}`)}
                   onDelete={() => handleDelete(post.id)}
+                  showAuthor={false}
                 />
               </div>
             ))}

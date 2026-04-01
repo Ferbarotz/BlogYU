@@ -11,7 +11,7 @@ const Navbar = () => {
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    navigate("/login");
+    navigate("/");
   };
 
   return (
@@ -22,42 +22,51 @@ const Navbar = () => {
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid rgba(0,242,254,0.2)",
         boxShadow: "0 4px 30px rgba(0,0,0,0.4)",
-        padding: "10px 0"
+        padding: "12px 0"
       }}
     >
-      <div className="container">
+      <div className="container d-flex align-items-center">
 
         {/* LOGO */}
-        <Link className="navbar-brand d-flex align-items-center gap-2" to="/" style={{ textDecoration: "none" }}>
+        <Link className="navbar-brand d-flex align-items-center gap-3" to="/" style={{ textDecoration: "none" }}>
           <img
             src={logo}
             alt="BlogYU Logo"
             style={{
-              width: "60px",       // 👈 un poco más grande para que se vean las montañas
-              height: "60px",
+              width: "96px",        // aumentado
+              height: "96px",       // aumentado
               objectFit: "contain",
-              // borderRadius: "12px"  👈 ELIMINADO para que no aparezca el cuadro blanco
-              filter: "drop-shadow(0 0 8px rgba(0,242,254,0.4))"
+              filter: "drop-shadow(0 0 12px rgba(0,242,254,0.45))"
             }}
           />
           <div className="d-flex flex-column justify-content-center" style={{ lineHeight: "1" }}>
-            <div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
               <span style={{
-                fontSize: "1.8rem", fontWeight: "900", color: "#fff",
-                letterSpacing: "-1.5px", fontFamily: "'Inter', sans-serif",
-                textShadow: "0 0 20px rgba(255,255,255,0.1)"
+                fontSize: "2.2rem",    // aumentado
+                fontWeight: "900",
+                color: "#fff",
+                letterSpacing: "-1.5px",
+                fontFamily: "'Inter', sans-serif",
+                textShadow: "0 0 20px rgba(255,255,255,0.08)"
               }}>Blog</span>
               <span style={{
-                fontSize: "1.8rem", fontWeight: "900",
+                fontSize: "2.2rem",    // aumentado
+                fontWeight: "900",
                 background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                letterSpacing: "-1.5px", fontFamily: "'Inter', sans-serif",
-                filter: "drop-shadow(0 0 8px rgba(0,242,254,0.5))"
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                letterSpacing: "-1.5px",
+                fontFamily: "'Inter', sans-serif",
+                filter: "drop-shadow(0 0 10px rgba(0,242,254,0.45))"
               }}>YU</span>
             </div>
             <small style={{
-              fontSize: "0.55rem", letterSpacing: "3px",
-              color: "#f9d423", textTransform: "uppercase", fontWeight: "800"
+              fontSize: "0.65rem",   // ligeramente aumentado
+              letterSpacing: "3px",
+              color: "#f9d423",
+              textTransform: "uppercase",
+              fontWeight: "800",
+              marginTop: "2px"
             }}>Comunidad Viajera</small>
           </div>
         </Link>
@@ -89,7 +98,7 @@ const Navbar = () => {
                     style={{
                       background: "rgba(0,242,254,0.08)",
                       border: "1px solid rgba(0,242,254,0.4)",
-                      color: "#00f2fe", fontSize: "0.85rem",
+                      color: "#00f2fe", fontSize: "0.95rem",
                       transition: "all 0.3s ease"
                     }}
                     onMouseOver={(e) => e.currentTarget.style.background = "rgba(0,242,254,0.18)"}
@@ -125,7 +134,7 @@ const Navbar = () => {
                     className="btn rounded-pill px-4 fw-bold text-dark"
                     style={{
                       background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
-                      border: "none", fontSize: "0.9rem",
+                      border: "none", fontSize: "0.95rem",
                       boxShadow: "0 0 15px rgba(249,212,35,0.3)",
                       transition: "all 0.3s ease"
                     }}
@@ -143,8 +152,26 @@ const Navbar = () => {
       </div>
 
       <style>{`
-        .nav-hover { color: rgba(255,255,255,0.8) !important; font-size: 0.85rem; letter-spacing: 0.5px; transition: all 0.3s ease; }
+        .nav-hover { color: rgba(255,255,255,0.85) !important; font-size: 0.9rem; letter-spacing: 0.5px; transition: all 0.3s ease; }
         .nav-hover:hover { color: #00f2fe !important; transform: translateY(-1px); }
+
+        /* Responsivo: reducir logo y tamaño de fuente en pantallas pequeñas */
+        @media (max-width: 576px) {
+          .navbar-brand img {
+            width: 64px !important;
+            height: 64px !important;
+          }
+          .navbar-brand span {
+            font-size: 1.25rem !important;
+          }
+          .navbar-brand small {
+            font-size: 0.55rem !important;
+          }
+          .btn.px-4 {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+          }
+        }
       `}</style>
     </nav>
   );

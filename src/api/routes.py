@@ -1,11 +1,12 @@
-from flask import Blueprint, request, jsonify, current_app, send_from_directory
+from flask import Blueprint, request, jsonify, current_app, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import os
 from time import time
-from datetime import datetime
-from .extensions import db, bcrypt
+from datetime import datetime, timedelta
+from .extensions import db, bcrypt, mail
 from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, decode_token
+from flask_mail import Message
 
 api = Blueprint('api', __name__)
 
@@ -65,6 +66,81 @@ def register():
     db.session.commit()
     return jsonify({"msg": "Usuario creado con éxito"}), 201
 
+
+# ---------- PASSWORD RECOVERY ----------
+# En forgot_password: usa FRONTEND_URL para enviar link al frontend y captura excepciones de mail
+@api.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    email = request.json.get('email', None)
+    if not email:
+        return jsonify({"msg": "Email requerido"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    # No revelar si el user existe
+    if not user:
+        return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
+
+    expires = timedelta(minutes=30)
+    token = create_access_token(identity=user.id, expires_delta=expires)
+
+    # Construir link apuntando al frontend (mejor UX)
+    FRONTEND_URL = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
+    reset_url = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
+
+    try:
+        msg = Message(
+            subject="Recuperación de contraseña - BlogYU",
+            recipients=[email],
+            body=f"Para restablecer tu contraseña haz clic en el siguiente enlace:\n\n{reset_url}\n\nEste enlace expirará en 30 minutos."
+        )
+        mail.send(msg)
+    except Exception as e:
+        # En desarrollo devuelve el error; en producción registra y devuelve mensaje genérico
+        current_app.logger.info(f"[forgot_password] enviando mail a {email}, mail object: {mail!r}")
+        current_app.logger.exception("Error enviando correo de recuperación")
+        return jsonify({"msg": "Error al enviar el correo de recuperación", "error": str(e)}), 500
+
+    return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
+
+
+# En reset_password: acepta token por path, query o body
+@api.route('/reset-password', methods=['POST'])
+@api.route('/reset-password/<token>', methods=['POST'])
+def reset_password(token=None):
+    # token puede venir por:
+    # - path param /reset-password/<token>
+    # - query param ?token=...
+    # - JSON body {"token": "..."}
+    if not token:
+        token = request.args.get('token') or (request.json and request.json.get('token'))
+
+    if not token:
+        return jsonify({"msg": "Token requerido"}), 400
+
+    try:
+        data = decode_token(token)
+        user_id = data.get('sub') or data.get('identity') or data.get('identity')
+    except Exception as e:
+        current_app.logger.exception("Token inválido/expirado")
+        return jsonify({"msg": "Token inválido o expirado", "error": str(e)}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"msg": "Usuario no encontrado"}), 404
+
+    new_password = request.json.get('password', None)
+    if not new_password:
+        return jsonify({"msg": "Nueva contraseña requerida"}), 400
+
+    try:
+        hashed_pw = bcrypt.generate_password_hash(new_password).decode('utf-8')
+        user.password = hashed_pw
+        db.session.commit()
+    except Exception:
+        current_app.logger.exception("Error actualizando contraseña")
+        return jsonify({"msg": "Error al actualizar la contraseña"}), 500
+
+    return jsonify({"msg": "Contraseña actualizada correctamente"}), 200
 
 # ---------- UPLOADS ----------
 @api.route('/uploads/<path:filename>', methods=['GET'])
@@ -410,6 +486,7 @@ def get_my_routes():
     routes = TravelRoute.query.filter_by(user_id=user_id).order_by(TravelRoute.created_at.desc()).all()
     return jsonify([r.serialize() for r in routes]), 200
 
+
 @api.route('/routes/<int:route_id>', methods=['PUT'])
 @jwt_required()
 def update_route(route_id):
@@ -464,3 +541,17 @@ def update_route(route_id):
 
     db.session.commit()
     return jsonify({"msg": "Ruta actualizada", "route": route.serialize()}), 200
+
+@api.route('/test-mail', methods=['GET'])
+def test_mail():
+    try:
+        msg = Message(
+            subject="Test correo BlogYU",
+            recipients=[current_app.config.get('MAIL_USERNAME')],
+            body="Este es un correo de prueba desde BlogYU."
+        )
+        mail.send(msg)
+        return jsonify({"msg": "Correo enviado correctamente"}), 200
+    except Exception as e:
+        # En desarrollo devolver el error para diagnóstico
+        return jsonify({"error": str(e)}), 500

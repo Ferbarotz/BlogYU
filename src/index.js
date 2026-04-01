@@ -7,6 +7,8 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import Navbar from './front/components/Navbar';
 import Home from './front/pages/Home';
 import Login from './front/pages/Login';
+import ForgotPassword from './front/pages/ForgotPassword';
+import ResetPassword from './front/pages/ResetPassword';
 import Register from './front/pages/Register';
 import Profile from "./front/pages/Profile";
 import Posts from "./front/pages/Posts";
@@ -41,6 +43,8 @@ const App = () => (
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/register" element={<Register />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="/posts" element={<Posts />} />
