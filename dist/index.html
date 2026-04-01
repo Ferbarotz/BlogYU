@@ -4,9 +4,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BlogYU</title>
+
+  <!-- INYECTAR API BASE AQUÍ (DEV REMOTO). Asegúrate que este script se incluya
+       en la plantilla que realmente sirve el dev server (HtmlWebpackPlugin usa public/index.html por defecto). -->
+  <script>
+    // Reemplaza por la URL real de tu backend dev si la conoces.
+    // Ejemplo Codespaces:
+    window.__API_BASE = "https://super-duper-engine-7vw7gxv9w9xvfj9j5-5000.app.github.dev";
+    console.log("window.__API_BASE =", window.__API_BASE);
+  </script>
 </head>
 <body>
   <div id="root"></div>
-  <!-- tu bundle será inyectado por webpack/dev server -->
+  <!-- bundle inyectado por Webpack/HtmlWebpackPlugin -->
 </body>
 </html>

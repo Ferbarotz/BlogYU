@@ -1,285 +1,518 @@
+// src/front/pages/CreateRoute.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getBackendURL from '../utils/backend';
 
+const MAX_PHOTOS_PER_EXP = 10;
+
 const CreateRoute = () => {
-    const navigate = useNavigate();
-    const [routeData, setRouteData] = useState({
-        title: '', destination: '', start_date: '', budget: 'Medio'
+  const navigate = useNavigate();
+  const [routeData, setRouteData] = useState({
+    title: '',
+    destination: '',
+    start_date: '',
+    budget: 'Medio'
+  });
+  const [experiences, setExperiences] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const icons = {
+    vuelo: '✈️', aeropuerto: '🛫', hotel: '🏨',
+    restaurante: '🍽️', vip: '💎', cafe: '☕',
+    lugar: '🗺️', transporte: '🚖', otro: '📍'
+  };
+
+  const addExperience = (type) => {
+    setExperiences(prev => [
+      ...prev,
+      {
+        type,
+        title: '',
+        description: '',
+        rating: 5,
+        location: '',
+        icon: icons[type] || '📍',
+        images: []
+      }
+    ]);
+  };
+
+  const handleRouteInfo = (e) => setRouteData({ ...routeData, [e.target.name]: e.target.value });
+
+  const handleExpChange = (index, field, value) => {
+    setExperiences(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
     });
-    const [experiences, setExperiences] = useState([]);
-    const [loading, setLoading] = useState(false);
+  };
 
-    const icons = {
-        vuelo: '✈️', aeropuerto: '🛫', hotel: '🏨',
-        restaurante: '🍽️', vip: '💎', cafe: '☕',
-        lugar: '🗺️', transporte: '🚖', otro: '📍'
-    };
+  const removeExperience = (index) => {
+    setExperiences(prev => prev.filter((_, i) => i !== index));
+  };
 
-    const addExperience = (type) => {
-        setExperiences([...experiences, {
-            type, title: '', description: '', rating: 5,
-            location: '', icon: icons[type] || '📍', images: []
-        }]);
-    };
+  const handleFileUpload = async (index, e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-    const handleRouteInfo = (e) => setRouteData({ ...routeData, [e.target.name]: e.target.value });
+    const copy = [...experiences];
+    const remaining = MAX_PHOTOS_PER_EXP - (copy[index].images?.length || 0);
+    const toUpload = files.slice(0, remaining);
+    const BACKEND = getBackendURL();
 
-    const handleExpChange = (index, field, value) => {
-        const newExps = [...experiences];
-        newExps[index][field] = value;
-        setExperiences(newExps);
-    };
-
-    const removeExperience = (index) => setExperiences(experiences.filter((_, i) => i !== index));
-
-    const handleFileUpload = async (index, e) => {
-        const files = Array.from(e.target.files);
-        console.log("📁 Archivos seleccionados:", files.length, files.map(f => f.name));
-
-        const newExps = [...experiences];
-        const remaining = 10 - newExps[index].images.length;
-        const toUpload = files.slice(0, remaining);
-
-        const BACKEND = getBackendURL();
-        console.log("🌐 Backend URL:", BACKEND);
-
-        for (const file of toUpload) {
-            const formData = new FormData();
-            formData.append("file", file);
-
-            try {
-                console.log("⬆️ Subiendo:", file.name);
-                const res = await fetch(`${BACKEND}/api/upload-step-image`, {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${localStorage.getItem("token")}`
-                    },
-                    body: formData
-                });
-
-                console.log("📡 Status:", res.status);
-                const data = await res.json();
-                console.log("📦 Respuesta:", data);
-
-                if (res.ok) {
-                    // ✅ CAMBIO: construir URL absoluta si el backend devuelve ruta relativa
-                    const finalUrl = data.url.startsWith("http") ? data.url : `${BACKEND}${data.url}`;
-                    newExps[index].images.push(finalUrl);
-                    console.log("✅ URL final para mostrar:", finalUrl);
-                } else {
-                    console.error("❌ Error del servidor:", data);
-                    alert(`Error: ${data.msg}`);
-                }
-            } catch (err) {
-                console.error("💥 Error de red:", err);
-                alert(`Error de conexión: ${err.message}`);
-            }
+    for (const file of toUpload) {
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch(`${BACKEND}/api/upload-step-image`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: formData
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data?.url) {
+          const finalUrl = data.url.startsWith('http') ? data.url : `${BACKEND}${data.url}`;
+          copy[index].images = copy[index].images ? [...copy[index].images, finalUrl] : [finalUrl];
+        } else {
+          console.error('Upload error', data);
+          alert(`Error subiendo ${file.name}: ${data?.msg || 'Servidor'}`);
         }
+      } catch (err) {
+        console.error('Network error uploading', err);
+        alert(`Error de conexión al subir ${file.name}`);
+      }
+    }
 
-        setExperiences([...newExps]);
-        e.target.value = "";
-    };
+    setExperiences(copy);
+    if (e.target) e.target.value = '';
+  };
 
-    const removeImage = (expIndex, imgIndex) => {
-        const newExps = [...experiences];
-        newExps[expIndex].images.splice(imgIndex, 1);
-        setExperiences([...newExps]);
-    };
+  const removeImage = (expIndex, imgIndex) => {
+    setExperiences(prev => {
+      const copy = [...prev];
+      copy[expIndex].images = copy[expIndex].images.filter((_, i) => i !== imgIndex);
+      return copy;
+    });
+  };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        const BACKEND = getBackendURL();
-        setLoading(true);
-        try {
-            const response = await fetch(`${BACKEND}/api/routes`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${localStorage.getItem("token")}`
-                },
-                body: JSON.stringify({ ...routeData, steps: experiences })
-            });
-            if (response.ok) {
-                alert("¡Ruta de viaje publicada con éxito! 🌍");
-                navigate("/my-routes");
-            } else {
-                const err = await response.json();
-                alert(`Error: ${err.msg || "No se pudo guardar la ruta"}`);
-            }
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const BACKEND = getBackendURL();
 
-    const inputStyle = {
-        background: "rgba(255,255,255,0.08)",
-        border: "1px solid rgba(161,140,209,0.4)",
-        borderRadius: "10px", color: "#ffffff",
-        padding: "10px 14px", width: "100%", outline: "none"
-    };
+    if (!routeData.title.trim()) return alert('Título requerido');
+    if (!experiences.length) return alert('Añade al menos una experiencia');
 
-    const labelStyle = {
-        color: "#c9b8f0", fontSize: "0.75rem", fontWeight: "700",
-        textTransform: "uppercase", letterSpacing: "0.08em",
-        marginBottom: "6px", display: "block"
-    };
+    setLoading(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/routes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ ...routeData, steps: experiences })
+      });
+      if (res.ok) {
+        alert('¡Ruta de viaje publicada con éxito! 🌍');
+        navigate('/my-routes');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Error: ${err.msg || 'No se pudo guardar la ruta'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de conexión. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-        <div style={{ minHeight: "100vh", background: "#120b21", color: "#ffffff" }} className="py-5">
-            <div className="container" style={{ maxWidth: "800px" }}>
+  return (
+    <div style={{ background: '#0d1117', minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+      {/* HEADER (same style as MyRoutes) */}
+      <div
+        className="text-center text-white"
+        style={{
+          background: 'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
+          padding: '50px 20px 40px',
+          position: 'relative'
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(to right, #00f2fe, #4facfe, #f9d423)'
+          }}
+        />
+        <p
+          style={{
+            color: '#f9d423',
+            letterSpacing: '3px',
+            fontSize: '0.7rem',
+            textTransform: 'uppercase',
+            marginBottom: '8px'
+          }}
+        >
+          Tu espacio viajero
+        </p>
+        <h1 className="fw-black mb-2" style={{ fontSize: '2.2rem', letterSpacing: '-1px' }}>
+          Registrar{' '}
+          <span
+            style={{
+              background: 'linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}
+          >
+            Nueva Ruta
+          </span>
+        </h1>
+        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.95rem', marginBottom: '18px' }}>
+          Comparte tu experiencia paso a paso con la comunidad
+        </p>
 
-                <div className="mb-5 text-center">
-                    <h2 style={{ color: "#ffffff", fontWeight: "900" }} className="display-5">
-                        Registrar <span style={{ color: "#a18cd1" }}>Nueva Ruta</span>
-                    </h2>
-                    <p style={{ color: "#a89bc2" }}>Comparte tu experiencia paso a paso con la comunidad</p>
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '1px',
+            background: 'linear-gradient(to right, transparent, #00f2fe, transparent)'
+          }}
+        />
+      </div>
+
+      <div className="container py-5" style={{ maxWidth: '980px' }}>
+        <form onSubmit={handleSubmit}>
+          {/* TRAVEL INFO CARD */}
+          <div
+            className="p-4 mb-4"
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '14px',
+              border: '1px solid rgba(255,255,255,0.06)'
+            }}
+          >
+            <h5 style={{ color: '#f9d423', marginBottom: '12px' }}>🌍 Información del Viaje</h5>
+
+            <div className="row g-3">
+              <div className="col-12">
+                <label style={{ color: 'rgba(255,255,255,0.7)', display: 'block', marginBottom: '6px', fontSize: '0.85rem' }}>
+                  Título
+                </label>
+                <input
+                  name="title"
+                  onChange={handleRouteInfo}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    color: '#fff',
+                    outline: 'none'
+                  }}
+                  placeholder="Ej: Mi Eurotrip de Verano"
+                  required
+                />
+              </div>
+
+              <div className="col-md-6">
+                <label style={{ color: 'rgba(255,255,255,0.7)', display: 'block', marginBottom: '6px', fontSize: '0.85rem' }}>
+                  Destino Principal
+                </label>
+                <input
+                  name="destination"
+                  onChange={handleRouteInfo}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    color: '#fff',
+                    outline: 'none'
+                  }}
+                  placeholder="Ej: Madrid - París"
+                  required
+                />
+              </div>
+
+              <div className="col-md-6">
+                <label style={{ color: 'rgba(255,255,255,0.7)', display: 'block', marginBottom: '6px', fontSize: '0.85rem' }}>
+                  Fecha de Inicio
+                </label>
+                <input
+                  type="date"
+                  name="start_date"
+                  onChange={handleRouteInfo}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    color: '#fff',
+                    outline: 'none'
+                  }}
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* EXPERIENCES / DIARY */}
+          <div className="mb-4">
+            <h5 style={{ color: '#f9d423', marginBottom: '12px' }}>📍 Diario de Experiencias</h5>
+
+            {experiences.map((exp, index) => (
+              <div
+                key={index}
+                className="p-4 mb-3 position-relative"
+                style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => removeExperience(index)}
+                  className="position-absolute top-0 end-0 m-3"
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    color: '#fff', border: 'none',
+                    borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer'
+                  }}
+                  title="Eliminar experiencia"
+                >
+                  ✕
+                </button>
+
+                <div className="d-flex align-items-center mb-3">
+                  <span style={{ fontSize: '1.6rem', marginRight: '10px' }}>{exp.icon}</span>
+                  {/* Cambio: color naranja para el título del tipo */}
+                  <h6 className="mb-0 text-uppercase fw-bold" style={{ color: '#f9d423' }}>
+                    {exp.type}
+                  </h6>
                 </div>
 
-                <form onSubmit={handleSubmit}>
-                    <div className="p-4 mb-4" style={{ background: "rgba(255,255,255,0.05)", borderRadius: "20px", border: "1px solid rgba(161,140,209,0.3)" }}>
-                        <h5 className="mb-4" style={{ color: "#ffc107" }}>🌍 Información del Viaje</h5>
-                        <div className="row g-3">
-                            <div className="col-12">
-                                <label style={labelStyle}>Título de la Aventura</label>
-                                <input name="title" onChange={handleRouteInfo} style={inputStyle} placeholder="Ej: Mi Eurotrip de Verano" required />
-                            </div>
-                            <div className="col-md-6">
-                                <label style={labelStyle}>Destino Principal</label>
-                                <input name="destination" onChange={handleRouteInfo} style={inputStyle} placeholder="Ej: Madrid - París" required />
-                            </div>
-                            <div className="col-md-6">
-                                <label style={labelStyle}>Fecha de Inicio</label>
-                                <input type="date" name="start_date" onChange={handleRouteInfo} style={{ ...inputStyle, colorScheme: "dark" }} required />
-                            </div>
-                        </div>
+                <div className="row g-3">
+                  <div className="col-md-8">
+                    <input
+                      placeholder={`Nombre del ${exp.type}`}
+                      value={exp.title}
+                      onChange={(e) => handleExpChange(index, 'title', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        color: '#fff'
+                      }}
+                      required
+                    />
+                  </div>
+
+                  <div className="col-md-4">
+                    <select
+                      value={exp.rating}
+                      onChange={(e) => handleExpChange(index, 'rating', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        color: '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="5">⭐⭐⭐⭐⭐ Excelente</option>
+                      <option value="4">⭐⭐⭐⭐ Muy bueno</option>
+                      <option value="3">⭐⭐⭐ Normal</option>
+                      <option value="2">⭐⭐ Malo</option>
+                      <option value="1">⭐ Pésimo</option>
+                    </select>
+                  </div>
+
+                  <div className="col-12">
+                    <input
+                      placeholder="📌 Ubicación (opcional)"
+                      value={exp.location}
+                      onChange={(e) => handleExpChange(index, 'location', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        color: '#fff'
+                      }}
+                    />
+                  </div>
+
+                  <div className="col-12">
+                    <textarea
+                      placeholder="Cuéntanos tu experiencia..."
+                      value={exp.description}
+                      onChange={(e) => handleExpChange(index, 'description', e.target.value)}
+                      rows="3"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        color: '#fff',
+                        resize: 'vertical'
+                      }}
+                    />
+                  </div>
+
+                  {/* BIG DASHED PHOTO AREA */}
+                  <div className="col-12">
+                    <div
+                      onClick={() => document.getElementById(`photoInput-${index}`)?.click()}
+                      onDragOver={(ev) => ev.preventDefault()}
+                      style={{
+                        border: '2px dashed rgba(255,255,255,0.12)',
+                        borderRadius: '12px',
+                        padding: '36px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        color: 'rgba(255,255,255,0.6)',
+                        background: 'rgba(255,255,255,0.01)'
+                      }}
+                    >
+                      <div style={{ fontSize: '2.6rem', marginBottom: '8px' }}>📷</div>
+                      <div style={{ fontWeight: 700, fontSize: '1rem' }}>
+                        Arrastra fotos aquí o <span style={{ color: '#f9d423' }}>haz clic para seleccionar</span>
+                      </div>
+                      <div style={{ marginTop: '8px', color: 'rgba(255,255,255,0.28)' }}>
+                        Máximo {MAX_PHOTOS_PER_EXP} fotos · JPG, PNG, WEBP
+                      </div>
+
+                      <input
+                        id={`photoInput-${index}`}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleFileUpload(index, e)}
+                      />
                     </div>
 
-                    <div className="mb-4">
-                        <h5 className="mb-3" style={{ color: "#ffc107" }}>📍 Diario de Experiencias</h5>
-
-                        {experiences.map((exp, index) => (
-                            <div key={index} className="p-4 mb-3 position-relative" style={{ background: "rgba(161,140,209,0.1)", borderRadius: "15px", borderLeft: "5px solid #a18cd1" }}>
-                                <button type="button" onClick={() => removeExperience(index)}
-                                    className="position-absolute top-0 end-0 m-3"
-                                    style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "none", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer" }}>
-                                    ✕
-                                </button>
-
-                                <div className="d-flex align-items-center mb-3">
-                                    <span className="fs-3 me-2">{exp.icon}</span>
-                                    <h6 className="mb-0 text-uppercase fw-bold" style={{ color: "#a18cd1" }}>{exp.type}</h6>
-                                </div>
-
-                                <div className="row g-3">
-                                    <div className="col-md-8">
-                                        <input placeholder={`Nombre del ${exp.type}`} style={inputStyle}
-                                            onChange={(e) => handleExpChange(index, 'title', e.target.value)} required />
-                                    </div>
-                                    <div className="col-md-4">
-                                        <select style={{ ...inputStyle, cursor: "pointer" }}
-                                            onChange={(e) => handleExpChange(index, 'rating', e.target.value)}>
-                                            <option value="5">⭐⭐⭐⭐⭐ Excelente</option>
-                                            <option value="4">⭐⭐⭐⭐ Muy bueno</option>
-                                            <option value="3">⭐⭐⭐ Normal</option>
-                                            <option value="2">⭐⭐ Malo</option>
-                                            <option value="1">⭐ Pésimo</option>
-                                        </select>
-                                    </div>
-                                    <div className="col-12">
-                                        <input placeholder="📌 Ubicación (opcional)" style={inputStyle}
-                                            onChange={(e) => handleExpChange(index, 'location', e.target.value)} />
-                                    </div>
-                                    <div className="col-12">
-                                        <textarea placeholder="Cuéntanos tu experiencia..."
-                                            style={{ ...inputStyle, resize: "vertical" }} rows="2"
-                                            onChange={(e) => handleExpChange(index, 'description', e.target.value)} />
-                                    </div>
-
-                                    <div className="col-12">
-                                        <label style={labelStyle}>
-                                            📸 Fotos de esta experiencia ({exp.images.length}/10)
-                                        </label>
-                                        <div className="d-flex flex-wrap gap-2 align-items-center">
-                                            {exp.images.map((img, imgIdx) => (
-                                                <div key={imgIdx} className="position-relative" style={{ width: "80px", height: "80px" }}>
-                                                    <img src={img} alt={`foto-${imgIdx}`}
-                                                        style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "8px", border: "2px solid #a18cd1" }}
-                                                        onError={(e) => { e.target.src = "https://placehold.co/80?text=Error"; }} />
-                                                    <button type="button" onClick={() => removeImage(index, imgIdx)}
-                                                        style={{ position: "absolute", top: "-6px", right: "-6px", width: "20px", height: "20px", borderRadius: "50%", background: "#dc3545", color: "#fff", border: "none", fontSize: "10px", cursor: "pointer", lineHeight: "1" }}>
-                                                        ✕
-                                                    </button>
-                                                </div>
-                                            ))}
-
-                                            {exp.images.length < 10 && (
-                                                <label style={{
-                                                    width: "80px", height: "80px", borderRadius: "8px",
-                                                    border: "2px dashed #a18cd1", background: "rgba(161,140,209,0.1)",
-                                                    color: "#a18cd1", fontSize: "1.8rem", display: "flex",
-                                                    alignItems: "center", justifyContent: "center",
-                                                    cursor: "pointer", flexDirection: "column", gap: "2px"
-                                                }}>
-                                                    +
-                                                    <span style={{ fontSize: "0.55rem", color: "#c9b8f0", textAlign: "center", lineHeight: "1.2" }}>
-                                                        Añadir foto
-                                                    </span>
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        multiple
-                                                        style={{ display: "none" }}
-                                                        onChange={(e) => handleFileUpload(index, e)}
-                                                    />
-                                                </label>
-                                            )}
-                                        </div>
-                                        {exp.images.length === 0 && (
-                                            <p style={{ color: "#7a6e8a", fontSize: "0.75rem", marginTop: "6px" }}>
-                                                Puedes añadir hasta 10 fotos por experiencia
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+                    {exp.images && exp.images.length > 0 && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                        {exp.images.map((src, i) => (
+                          <div key={i} style={{ position: 'relative' }}>
+                            <img src={src} alt="" style={{ width: '92px', height: '92px', objectFit: 'cover', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }} />
+                            <button
+                              type="button"
+                              onClick={() => removeImage(index, i)}
+                              style={{
+                                position: 'absolute',
+                                top: '6px',
+                                right: '6px',
+                                width: '26px',
+                                height: '26px',
+                                borderRadius: '50%',
+                                background: 'rgba(220,53,69,0.9)',
+                                border: 'none',
+                                color: '#fff',
+                                cursor: 'pointer'
+                              }}
+                              title="Eliminar foto"
+                            >
+                              ✕
+                            </button>
+                          </div>
                         ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
 
-                        <div className="p-3 mt-3 text-center" style={{ background: "rgba(255,255,255,0.03)", borderRadius: "15px", border: "1px dashed rgba(161,140,209,0.4)" }}>
-                            <p style={{ color: "#a89bc2", fontSize: "0.85rem", marginBottom: "12px" }}>➕ Añadir experiencia al diario</p>
-                            <div className="d-flex flex-wrap gap-2 justify-content-center">
-                                {Object.entries(icons).map(([type, icon]) => (
-                                    <button key={type} type="button" onClick={() => addExperience(type)}
-                                        style={{ background: "rgba(161,140,209,0.15)", border: "1px solid rgba(161,140,209,0.5)", color: "#e0d4ff", borderRadius: "20px", padding: "6px 16px", fontSize: "0.85rem", cursor: "pointer" }}>
-                                        {icon} {type.charAt(0).toUpperCase() + type.slice(1)}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+            {/* ADD EXPERIENCE AREA */}
+            <div
+              className="p-3 mt-3 text-center"
+              style={{
+                background: 'rgba(255,255,255,0.01)',
+                borderRadius: '12px',
+                border: '1px dashed rgba(255,255,255,0.06)'
+              }}
+            >
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.95rem', marginBottom: '10px' }}>
+                ➕ Añadir experiencia al diario
+              </p>
 
-                    <div className="text-center mt-5">
-                        <button type="submit" disabled={loading || experiences.length === 0}
-                            style={{
-                                background: experiences.length === 0 ? "rgba(161,140,209,0.3)" : "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)",
-                                color: "#1a0a2e", borderRadius: "15px", border: "none",
-                                padding: "14px 48px", fontSize: "1.1rem", fontWeight: "700",
-                                cursor: experiences.length === 0 ? "not-allowed" : "pointer"
-                            }}>
-                            {loading ? "Publicando..." : "🚀 Publicar mi Ruta de Viaje"}
-                        </button>
-                        {experiences.length === 0 && (
-                            <p style={{ color: "#a89bc2", fontSize: "0.85rem", marginTop: "8px" }}>
-                                Añade al menos una experiencia para publicar
-                            </p>
-                        )}
-                    </div>
-                </form>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+                {Object.entries(icons).map(([type, icon]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => addExperience(type)}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid rgba(255,255,255,0.06)',
+                      color: 'rgba(255,255,255,0.9)',
+                      borderRadius: '18px',
+                      padding: '8px 14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <span style={{ marginRight: '8px' }}>{icon}</span>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
-        </div>
-    );
+          </div>
+
+          {/* SUBMIT BUTTON */}
+          <div className="text-center mt-4">
+            <button
+              type="submit"
+              disabled={loading || experiences.length === 0}
+              style={{
+                background: experiences.length === 0 ? 'rgba(255,255,255,0.04)' : 'linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)',
+                color: experiences.length === 0 ? 'rgba(255,255,255,0.6)' : '#000',
+                borderRadius: '16px',
+                border: 'none',
+                padding: '12px 40px',
+                fontSize: '1rem',
+                fontWeight: 800,
+                boxShadow: experiences.length === 0 ? 'none' : '0 0 20px rgba(249,212,35,0.18)',
+                cursor: experiences.length === 0 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {loading ? 'Publicando...' : '🚀 Publicar mi Ruta de Viaje'}
+            </button>
+
+            {experiences.length === 0 && (
+              <p style={{ color: 'rgba(255,255,255,0.4)', marginTop: '10px' }}>
+                Añade al menos una experiencia para poder publicar
+              </p>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <style>{`
+        body { background: #0d1117 !important; }
+        input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.28) !important; }
+      `}</style>
+    </div>
+  );
 };
 
 export default CreateRoute;

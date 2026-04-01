@@ -2,7 +2,7 @@ from .extensions import db
 from datetime import datetime
 import urllib.parse
 from flask_sqlalchemy import SQLAlchemy
-db = SQLAlchemy()
+
 
 class User(db.Model):
     __tablename__ = "user"
@@ -12,6 +12,7 @@ class User(db.Model):
     password = db.Column(db.String(256), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     background = db.Column(db.String(512), nullable=True)
+    is_admin = db.Column(db.Boolean, default=False)
 
     def serialize(self):
         return {
@@ -204,7 +205,7 @@ class RouteStepImage(db.Model):
 class Favorite(db.Model):
     __tablename__ = "favorites"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     item_type = db.Column(db.String(50), nullable=False)  # 'post' | 'route' | ...
     item_id = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
