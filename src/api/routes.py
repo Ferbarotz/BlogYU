@@ -1,55 +1,105 @@
-from flask import Blueprint, request, jsonify, current_app, send_from_directory, url_for
-from werkzeug.utils import secure_filename
+# src/api/routes.py
 import os
+import json
+import traceback
 from time import time
 from datetime import datetime, timedelta
-from .extensions import db, bcrypt, mail
-from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, decode_token
+from functools import wraps
+
+from flask import Blueprint, request, jsonify, current_app, send_from_directory
+from werkzeug.utils import secure_filename
+from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token)
 from flask_mail import Message
 
-api = Blueprint('api', __name__)
+from .extensions import db, bcrypt, mail
+from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage
 
+# Blueprint
+api = bp = Blueprint('api', __name__)
+
+# Config
 ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic'}
-MAX_FILE_SIZE = 8 * 1024 * 1024
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_FILE_SIZE = 8 * 1024 * 1024  # 8 MB default
 
+# ----------------- Helpers -----------------
 def allowed_file(filename, file_obj=None):
+    """Check extension or mimetype fallback."""
     if filename and '.' in filename:
         ext = filename.rsplit('.', 1)[1].lower().strip()
         if ext in ALLOWED_EXT:
             return True
-
     if file_obj is not None:
         mimetype = getattr(file_obj, 'mimetype', '') or ''
         if mimetype.startswith('image/'):
             return True
-
     return False
 
+def admin_required(fn):
+    """Decorator to require is_admin on current JWT user."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            user_id = get_jwt_identity()
+            if user_id is None:
+                return jsonify({"msg": "No autorizado (sin token)"}), 401
+            u = User.query.get(int(user_id))
+        except Exception:
+            return jsonify({"msg": "No autorizado"}), 401
 
+        if not getattr(u, "is_admin", False):
+            return jsonify({"msg": "Acceso restringido: admin requerido"}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+# ----------------- Root / Health -----------------
 @api.route("/", methods=["GET"])
 def api_root():
     return jsonify({"msg": "API BlogYU funcionando"}), 200
 
-
-# ---------- AUTH ----------
+# ----------------- AUTH -----------------
 @api.route('/login', methods=['POST'])
 def login():
-    body = request.get_json() or {}
+    body = request.get_json(silent=True) or {}
     email = body.get('email')
     password = body.get('password')
     if not email or not password:
         return jsonify({"msg": "email y password requeridos"}), 400
-    user = User.query.filter_by(email=email).first()
-    if not user or not bcrypt.check_password_hash(user.password, password):
-        return jsonify({"msg": "Credenciales inválidas"}), 401
-    token = create_access_token(identity=str(user.id))
-    return jsonify({"token": token, "user": user.serialize()}), 200
 
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.check_password(password):
+        return jsonify({"msg": "Credenciales inválidas"}), 401
+
+    try:
+        token = create_access_token(identity=str(user.id))
+    except Exception as e:
+        current_app.logger.exception("Error generando token")
+        return jsonify({"msg": "error_generando_token", "detail": str(e)}), 500
+
+    try:
+        serialized = user.serialize()
+    except Exception:
+        current_app.logger.exception("user.serialize() falló en login")
+        serialized = {
+            "id": user.id,
+            "name": getattr(user, "name", None),
+            "email": getattr(user, "email", None),
+            "profile_pic": getattr(user, "profile_pic", None),
+            "background": getattr(user, "background", None),
+            "is_admin": getattr(user, "is_admin", False)
+        }
+
+    # Aseguramos que serialize() incluya profile_pic y background aunque el método custom no lo devuelva
+    if "profile_pic" not in serialized:
+        serialized["profile_pic"] = getattr(user, "profile_pic", None)
+    if "background" not in serialized:
+        serialized["background"] = getattr(user, "background", None)
+
+    return jsonify({"token": token, "user": serialized}), 200
 
 @api.route('/register', methods=['POST'])
 def register():
-    body = request.get_json() or {}
+    body = request.get_json(silent=True) or {}
     name = body.get('name')
     email = body.get('email')
     password = body.get('password')
@@ -57,33 +107,32 @@ def register():
         return jsonify({"msg": "Email y password requeridos"}), 400
     if User.query.filter_by(email=email).first():
         return jsonify({"msg": "El usuario ya existe"}), 400
-    new_user = User(
-        name=name,
-        email=email,
-        password=bcrypt.generate_password_hash(password).decode('utf-8')
-    )
+
+    new_user = User(name=name, email=email)
+    new_user.password = password  # asume que el setter del modelo hashea
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({"msg": "Usuario creado con éxito"}), 201
+    try:
+        user_serialized = new_user.serialize()
+    except Exception:
+        user_serialized = {"id": new_user.id, "name": new_user.name, "email": new_user.email}
+    return jsonify({"msg": "Usuario creado con éxito", "user": user_serialized}), 201
 
-
-# ---------- PASSWORD RECOVERY ----------
-# En forgot_password: usa FRONTEND_URL para enviar link al frontend y captura excepciones de mail
+# ----------------- PASSWORD RECOVERY -----------------
 @api.route('/forgot-password', methods=['POST'])
 def forgot_password():
-    email = request.json.get('email', None)
+    email = (request.get_json(silent=True) or {}).get('email') or request.form.get('email')
     if not email:
         return jsonify({"msg": "Email requerido"}), 400
 
     user = User.query.filter_by(email=email).first()
-    # No revelar si el user existe
+    # No revelar si existe o no
     if not user:
         return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
 
     expires = timedelta(minutes=30)
     token = create_access_token(identity=user.id, expires_delta=expires)
 
-    # Construir link apuntando al frontend (mejor UX)
     FRONTEND_URL = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
     reset_url = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
 
@@ -95,25 +144,16 @@ def forgot_password():
         )
         mail.send(msg)
     except Exception as e:
-        # En desarrollo devuelve el error; en producción registra y devuelve mensaje genérico
-        current_app.logger.info(f"[forgot_password] enviando mail a {email}, mail object: {mail!r}")
         current_app.logger.exception("Error enviando correo de recuperación")
         return jsonify({"msg": "Error al enviar el correo de recuperación", "error": str(e)}), 500
 
     return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
 
-
-# En reset_password: acepta token por path, query o body
 @api.route('/reset-password', methods=['POST'])
 @api.route('/reset-password/<token>', methods=['POST'])
 def reset_password(token=None):
-    # token puede venir por:
-    # - path param /reset-password/<token>
-    # - query param ?token=...
-    # - JSON body {"token": "..."}
     if not token:
-        token = request.args.get('token') or (request.json and request.json.get('token'))
-
+        token = request.args.get('token') or (request.get_json(silent=True) or {}).get('token')
     if not token:
         return jsonify({"msg": "Token requerido"}), 400
 
@@ -128,27 +168,28 @@ def reset_password(token=None):
     if not user:
         return jsonify({"msg": "Usuario no encontrado"}), 404
 
-    new_password = request.json.get('password', None)
+    payload = request.get_json(silent=True) or {}
+    new_password = payload.get('password') or request.form.get('password')
     if not new_password:
         return jsonify({"msg": "Nueva contraseña requerida"}), 400
 
     try:
-        hashed_pw = bcrypt.generate_password_hash(new_password).decode('utf-8')
-        user.password = hashed_pw
+        user.password = new_password
         db.session.commit()
     except Exception:
         current_app.logger.exception("Error actualizando contraseña")
+        db.session.rollback()
         return jsonify({"msg": "Error al actualizar la contraseña"}), 500
 
     return jsonify({"msg": "Contraseña actualizada correctamente"}), 200
 
-# ---------- UPLOADS ----------
+# ----------------- UPLOADS (servir) -----------------
 @api.route('/uploads/<path:filename>', methods=['GET'])
 def uploads(filename):
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     return send_from_directory(uploads_dir, filename)
 
-
+# ----------------- POSTS -----------------
 @api.route('/upload-step-image', methods=['POST'])
 @jwt_required()
 def upload_step_image():
@@ -169,13 +210,10 @@ def upload_step_image():
     file_url = f"/api/uploads/{filename}"
     return jsonify({"url": file_url}), 200
 
-
-# ---------- POSTS ----------
 @api.route('/posts', methods=['GET'])
 def get_all_posts():
     posts = Post.query.order_by(Post.created_at.desc()).all()
     return jsonify([p.serialize() for p in posts]), 200
-
 
 @api.route('/my-posts', methods=['GET'])
 @jwt_required()
@@ -184,34 +222,29 @@ def get_user_posts():
     posts = Post.query.filter_by(user_id=int(user_id)).order_by(Post.created_at.desc()).all()
     return jsonify([p.serialize() for p in posts]), 200
 
-
 @api.route('/posts/<int:post_id>', methods=['GET'])
 def get_post(post_id):
     post = Post.query.get_or_404(post_id)
     return jsonify(post.serialize()), 200
 
-
 @api.route('/posts', methods=['POST'])
 @jwt_required()
 def create_post():
     user_id = int(get_jwt_identity())
-    category = None
     saved_urls = []
 
     if request.is_json:
         data = request.get_json()
-        title      = data.get('title')
-        content    = data.get('content')
-        category   = data.get('category')
+        title = data.get('title')
+        content = data.get('content')
+        category = data.get('category')
         saved_urls = data.get('images', [])
     else:
-        title    = request.form.get('title')
-        content  = request.form.get('content')
+        title = request.form.get('title')
+        content = request.form.get('content')
         category = request.form.get('category')
-
         uploads_dir = os.path.join(current_app.instance_path, 'uploads')
         os.makedirs(uploads_dir, exist_ok=True)
-
         for i, image_file in enumerate(request.files.getlist('images')):
             if not image_file or image_file.filename == "":
                 continue
@@ -239,7 +272,6 @@ def create_post():
     db.session.commit()
     return jsonify({"msg": "Post creado", "post": p.serialize(), "id": p.id}), 201
 
-
 @api.route('/posts/<int:post_id>', methods=['PUT'])
 @jwt_required()
 def update_post(post_id):
@@ -250,51 +282,80 @@ def update_post(post_id):
 
     if request.is_json:
         data = request.get_json()
-        p.title    = data.get("title",    p.title)
-        p.content  = data.get("content",  p.content)
+        p.title = data.get("title", p.title)
+        p.content = data.get("content", p.content)
         p.category = data.get("category", p.category)
+
+        # IDs de imágenes existentes que el usuario quiere CONSERVAR
+        keep_ids = data.get("keep_image_ids", [])
+        if keep_ids is not None:
+            # Eliminar las imágenes que NO están en keep_ids
+            for img in list(p.images):
+                if img.id not in keep_ids:
+                    try:
+                        old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
+                        if os.path.exists(old_path):
+                            os.remove(old_path)
+                    except Exception:
+                        pass
+                    db.session.delete(img)
+
+        # Agregar nuevas URLs de imágenes
+        new_image_urls = data.get("new_images", [])
+        current_count = PostImage.query.filter_by(post_id=p.id).count()
+        for i, url in enumerate(new_image_urls):
+            db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
+
+        # Actualizar imagen principal (primera imagen que quede)
+        db.session.flush()
+        first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
+        p.image = first_img.url if first_img else None
+
     else:
-        p.title    = request.form.get("title")    or p.title
-        p.content  = request.form.get("content")  or p.content
+        # multipart/form-data
+        p.title = request.form.get("title") or p.title
+        p.content = request.form.get("content") or p.content
         p.category = request.form.get("category") or p.category
 
-        new_files = request.files.getlist('images')
-        new_files = [f for f in new_files if f and f.filename != ""]
+        # IDs a conservar (vienen como JSON string en el form)
+        keep_ids_raw = request.form.get("keep_image_ids")
+        if keep_ids_raw:
+            try:
+                keep_ids = json.loads(keep_ids_raw)
+            except Exception:
+                keep_ids = []
 
+            for img in list(p.images):
+                if img.id not in keep_ids:
+                    try:
+                        old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
+                        if os.path.exists(old_path):
+                            os.remove(old_path)
+                    except Exception:
+                        pass
+                    db.session.delete(img)
+
+        # Subir nuevas fotos
+        new_files = [f for f in request.files.getlist('images') if f and f.filename != ""]
         if new_files:
-            # Borrar imágenes viejas del disco
-            for img in p.images:
-                try:
-                    old_path = os.path.join(
-                        current_app.instance_path, 'uploads',
-                        os.path.basename(img.url)
-                    )
-                    if os.path.exists(old_path):
-                        os.remove(old_path)
-                except Exception:
-                    pass
-
-            # Borrar registros viejos de BD
-            PostImage.query.filter_by(post_id=p.id).delete()
-
             uploads_dir = os.path.join(current_app.instance_path, 'uploads')
             os.makedirs(uploads_dir, exist_ok=True)
-            saved_urls = []
-
+            current_count = PostImage.query.filter_by(post_id=p.id).count()
             for i, image_file in enumerate(new_files):
                 if not allowed_file(image_file.filename, image_file):
                     continue
                 filename = f"{int(time())}_{i}_{secure_filename(image_file.filename)}"
                 image_file.save(os.path.join(uploads_dir, filename))
-                saved_urls.append(f"/api/uploads/{filename}")
+                url = f"/api/uploads/{filename}"
+                db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
 
-            p.image = saved_urls[0] if saved_urls else p.image
-            for order, url in enumerate(saved_urls):
-                db.session.add(PostImage(url=url, order=order, post_id=p.id))
+        # Actualizar imagen principal
+        db.session.flush()
+        first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
+        p.image = first_img.url if first_img else p.image
 
     db.session.commit()
     return jsonify(p.serialize()), 200
-
 
 @api.route('/posts/<int:post_id>', methods=['DELETE'])
 @jwt_required()
@@ -303,27 +364,25 @@ def delete_post(post_id):
     p = Post.query.get_or_404(post_id)
     if p.user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
-    # Borrar imágenes del disco
     for img in p.images:
         try:
             old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
             if os.path.exists(old_path):
                 os.remove(old_path)
         except Exception:
-            pass
+            current_app.logger.exception("Error eliminando archivo imagen")
     if p.image:
         try:
             old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(p.image))
             if os.path.exists(old_path):
                 os.remove(old_path)
         except Exception:
-            pass
+            current_app.logger.exception("Error eliminando imagen principal")
     db.session.delete(p)
     db.session.commit()
     return jsonify({"msg": "Eliminado"}), 200
 
-
-# ---------- CATEGORIES ----------
+# ----------------- CATEGORIES -----------------
 @api.route('/categories', methods=['GET'])
 def get_categories():
     categories = [
@@ -336,17 +395,15 @@ def get_categories():
     ]
     return jsonify(categories), 200
 
-
-# ---------- COMMENTS ----------
+# ----------------- COMMENTS -----------------
 @api.route('/posts/<int:post_id>/comments', methods=['GET'])
 def get_comments(post_id):
     comments = Comment.query.filter_by(post_id=post_id).order_by(Comment.created_at.asc()).all()
     return jsonify([c.serialize() for c in comments]), 200
 
-
 @api.route('/posts/<int:post_id>/comments', methods=['POST'])
 def add_comment(post_id):
-    body = request.get_json()
+    body = request.get_json(silent=True) or {}
     new_comment = Comment(
         content=body.get("content"),
         author_name=body.get("author_name", "Invitado"),
@@ -357,50 +414,236 @@ def add_comment(post_id):
     db.session.commit()
     return jsonify(new_comment.serialize()), 201
 
+# ----------------- USERS -----------------
+@api.route('/users/<int:user_id>', methods=['GET'])
+@jwt_required()
+def get_user(user_id):
+    current_user_id = int(get_jwt_identity())
+    if current_user_id != user_id:
+        return jsonify({"msg": "No tienes permisos para ver este usuario"}), 403
+    user = User.query.get_or_404(user_id)
+    try:
+        serialized = user.serialize()
+    except Exception:
+        serialized = {
+            "id": user.id,
+            "name": getattr(user, "name", None),
+            "email": getattr(user, "email", None),
+            "profile_pic": getattr(user, "profile_pic", None),
+            "background": getattr(user, "background", None),
+        }
+    return jsonify(serialized), 200
 
-# ---------- USERS ----------
-@api.route('/users', methods=['GET'])
-def get_users():
-    users = User.query.all()
-    return jsonify([{"id": u.id, "email": u.email, "name": u.name} for u in users]), 200
-
-
+# --- subir fondo (background) del usuario/profile page ---
 @api.route('/users/<int:user_id>/background', methods=['POST'])
 @jwt_required()
 def upload_user_background(user_id):
-    current_user_id = int(get_jwt_identity())
+    try:
+        current_user_id = int(get_jwt_identity())
+    except Exception:
+        return jsonify({"msg": "Token inválido / no autorizado"}), 401
+
     if current_user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
+
     if 'background' not in request.files:
-        return jsonify({"msg": "No se encontró el archivo 'background'"}), 400
+        return jsonify({"msg": "No se encontró archivo 'background' (usar campo 'background')"}), 400
+
     image_file = request.files['background']
     if image_file.filename == "":
         return jsonify({"msg": "Nombre de archivo vacío"}), 400
     if not allowed_file(image_file.filename, image_file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
-    filename = f"{int(time())}_{secure_filename(image_file.filename)}"
+
+    filename = f"background_{int(time())}_{secure_filename(image_file.filename)}"
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     os.makedirs(uploads_dir, exist_ok=True)
-    image_file.save(os.path.join(uploads_dir, filename))
+    save_path = os.path.join(uploads_dir, filename)
+    try:
+        image_file.save(save_path)
+    except Exception as ex:
+        current_app.logger.exception("Fallo guardando background")
+        return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
+
     file_url = f"/api/uploads/{filename}"
+
+    # SOLO actualizamos user.background
+    try:
+        user = User.query.get_or_404(user_id)
+        setattr(user, 'background', file_url)
+        db.session.commit()
+    except Exception as ex:
+        current_app.logger.exception("Fallo guardando background en BD")
+        db.session.rollback()
+        return jsonify({"msg": "Error actualizando usuario", "error": str(ex)}), 500
+
+    try:
+        serialized = user.serialize()
+    except Exception:
+        serialized = {'id': user.id, 'background': getattr(user, 'background', None)}
+    return jsonify({"msg": "Background de usuario actualizado", "background": file_url, "user": serialized}), 200
+
+@api.route('/users/<int:user_id>/profile-pic', methods=['POST'])
+@jwt_required()
+def upload_user_profile_pic(user_id):
+    try:
+        current_user_id = int(get_jwt_identity())
+    except Exception:
+        return jsonify({"msg": "Token inválido / no autorizado"}), 401
+
+    if current_user_id != user_id:
+        return jsonify({"msg": "No tienes permisos"}), 403
+
+    # aceptamos varios nombres pero SOLO actualizamos profile_pic
+    file_field_candidates = ['profile', 'avatar', 'profile_pic', 'profilePic', 'file']
+    image_file = None
+    for fname in file_field_candidates:
+        if fname in request.files and getattr(request.files[fname], 'filename', None):
+            candidate = request.files[fname]
+            if allowed_file(candidate.filename, candidate):
+                image_file = candidate
+                break
+
+    if image_file is None:
+        return jsonify({"msg": "No se recibió archivo de avatar (usar 'profile'|'avatar'|'profile_pic')"}), 400
+
+    if image_file.filename == "":
+        return jsonify({"msg": "Nombre de archivo vacío"}), 400
+    if not allowed_file(image_file.filename, image_file):
+        return jsonify({"msg": "Tipo de archivo no permitido"}), 400
+
+    # Guardar archivo
+    filename = f"profile_{int(time())}_{secure_filename(image_file.filename)}"
+    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
+    os.makedirs(uploads_dir, exist_ok=True)
+    save_path = os.path.join(uploads_dir, filename)
+    try:
+        image_file.save(save_path)
+    except Exception as ex:
+        current_app.logger.exception("Fallo guardando avatar")
+        return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
+
+    file_url = f"/api/uploads/{filename}"
+
+    # Solo actualizamos profile_pic en el usuario
+    try:
+        user = User.query.get_or_404(user_id)
+        setattr(user, 'profile_pic', file_url)
+        db.session.commit()
+    except Exception as ex:
+        current_app.logger.exception("Fallo guardando avatar en BD")
+        db.session.rollback()
+        return jsonify({"msg": "Error actualizando usuario", "error": str(ex)}), 500
+
+    try:
+        serialized = user.serialize()
+    except Exception:
+        serialized = {'id': user.id, 'profile_pic': getattr(user, 'profile_pic', None)}
+    return jsonify({"msg": "Avatar actualizado", "profile_pic": file_url, "user": serialized}), 200
+
+
+@api.route('/users/<int:user_id>', methods=['PATCH'])
+@jwt_required()
+def update_user(user_id):
+    """
+    PATCH seguro para /api/users/<id>
+    Acepta JSON con: profileShape | profile_shape, social (obj), name, email
+    """
+    try:
+        current_user_id = int(get_jwt_identity())
+    except Exception:
+        return jsonify({"msg": "Token inválido / no autorizado"}), 401
+
+    if current_user_id != user_id:
+        return jsonify({"msg": "No tienes permisos para editar este usuario"}), 403
+
     user = User.query.get_or_404(user_id)
-    user.background = file_url
-    db.session.commit()
-    return jsonify({"msg": "Background actualizado", "background": file_url, "user": user.serialize()}), 200
+    data = request.get_json(silent=True) or {}
 
+    try:
+        # profileShape / profile_shape
+        if 'profileShape' in data:
+            val = data.get('profileShape')
+            if hasattr(user, 'profile_shape'):
+                setattr(user, 'profile_shape', val)
+            else:
+                setattr(user, 'profileShape', val)
+        if 'profile_shape' in data:
+            val = data.get('profile_shape')
+            if hasattr(user, 'profile_shape'):
+                setattr(user, 'profile_shape', val)
+            else:
+                setattr(user, 'profileShape', val)
 
-# ---------- TRAVEL ROUTES ----------
+        # social merge
+        social = data.get('social')
+        if isinstance(social, dict):
+            if hasattr(user, 'social_twitter') or hasattr(user, 'twitter'):
+                if 'twitter' in social:
+                    if hasattr(user, 'social_twitter'):
+                        user.social_twitter = social.get('twitter')
+                    elif hasattr(user, 'twitter'):
+                        user.twitter = social.get('twitter')
+                if 'instagram' in social:
+                    if hasattr(user, 'social_instagram'):
+                        user.social_instagram = social.get('instagram')
+                    elif hasattr(user, 'instagram'):
+                        user.instagram = social.get('instagram')
+                if 'facebook' in social:
+                    if hasattr(user, 'social_facebook'):
+                        user.social_facebook = social.get('facebook')
+                    elif hasattr(user, 'facebook'):
+                        user.facebook = social.get('facebook')
+                if 'website' in social:
+                    if hasattr(user, 'social_website'):
+                        user.social_website = social.get('website')
+                    elif hasattr(user, 'website'):
+                        user.website = social.get('website')
+            else:
+                if hasattr(user, 'social') and (getattr(user, 'social') is None or isinstance(getattr(user, 'social'), dict)):
+                    existing = getattr(user, 'social') or {}
+                    existing.update(social)
+                    setattr(user, 'social', existing)
+                elif hasattr(user, 'meta') and (getattr(user, 'meta') is None or isinstance(getattr(user, 'meta'), dict)):
+                    existing = getattr(user, 'meta') or {}
+                    existing.setdefault('social', {}).update(social)
+                    setattr(user, 'meta', existing)
+
+        # other safe fields
+        if 'name' in data and hasattr(user, 'name'):
+            user.name = data.get('name')
+        if 'email' in data and hasattr(user, 'email'):
+            user.email = data.get('email')
+
+        db.session.commit()
+
+        try:
+            serialized = user.serialize()
+        except Exception:
+            current_app.logger.exception("user.serialize() falló, devolviendo campos básicos")
+            serialized = {'id': user.id, 'name': getattr(user, 'name', None), 'email': getattr(user, 'email', None)}
+
+        return jsonify({'msg': 'Usuario actualizado', 'user': serialized}), 200
+
+    except Exception as exc:
+        current_app.logger.exception("Excepción actualizando usuario (PATCH /users/%s)", user_id)
+        db.session.rollback()
+        tb = traceback.format_exc()
+        current_app.logger.debug("Traceback:\n%s", tb)
+        return jsonify({'msg': 'Error actualizando usuario', 'error': str(exc)}), 500
+
+# ----------------- TRAVEL ROUTES -----------------
 @api.route('/routes', methods=['POST'])
 @jwt_required()
 def create_route():
     user_id = int(get_jwt_identity())
-    body = request.get_json() or {}
+    body = request.get_json(silent=True) or {}
 
-    title       = (body.get("title")       or "").strip()
+    title = (body.get("title") or "").strip()
     destination = (body.get("destination") or "").strip()
-    start_date  = body.get("start_date")
-    budget      = body.get("budget")
-    steps       = body.get("steps") or []
+    start_date = body.get("start_date")
+    budget = body.get("budget")
+    steps = body.get("steps") or []
 
     if not title or not destination:
         return jsonify({"msg": "title y destination son requeridos"}), 400
@@ -421,11 +664,11 @@ def create_route():
         if not isinstance(s, dict):
             return jsonify({"msg": f"El step #{i} es inválido"}), 400
 
-        step_type     = (s.get("type")  or "").strip().lower()
-        step_title    = (s.get("title") or "").strip()
-        step_desc     = s.get("description")
+        step_type = (s.get("type") or "").strip().lower()
+        step_title = (s.get("title") or "").strip()
+        step_desc = s.get("description")
         step_location = s.get("location")
-        step_rating   = s.get("rating", 5)
+        step_rating = s.get("rating", 5)
 
         if not step_type or step_type not in allowed_types:
             return jsonify({"msg": f"El step #{i} tiene type inválido"}), 400
@@ -454,18 +697,15 @@ def create_route():
     db.session.commit()
     return jsonify({"msg": "Ruta creada", "route": route.serialize()}), 201
 
-
 @api.route('/routes', methods=['GET'])
 def get_routes():
     routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).all()
     return jsonify([r.serialize() for r in routes]), 200
 
-
 @api.route('/routes/<int:route_id>', methods=['GET'])
 def get_route(route_id):
     route = TravelRoute.query.get_or_404(route_id)
     return jsonify(route.serialize()), 200
-
 
 @api.route('/routes/<int:route_id>', methods=['DELETE'])
 @jwt_required()
@@ -478,14 +718,12 @@ def delete_route(route_id):
     db.session.commit()
     return jsonify({"msg": "Ruta eliminada"}), 200
 
-
 @api.route('/my-routes', methods=['GET'])
 @jwt_required()
 def get_my_routes():
     user_id = int(get_jwt_identity())
     routes = TravelRoute.query.filter_by(user_id=user_id).order_by(TravelRoute.created_at.desc()).all()
     return jsonify([r.serialize() for r in routes]), 200
-
 
 @api.route('/routes/<int:route_id>', methods=['PUT'])
 @jwt_required()
@@ -495,24 +733,22 @@ def update_route(route_id):
     if route.user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
 
-    body = request.get_json() or {}
+    body = request.get_json(silent=True) or {}
 
-    route.title       = (body.get("title")       or route.title).strip()
+    route.title = (body.get("title") or route.title).strip()
     route.destination = (body.get("destination") or route.destination).strip()
-    route.start_date  = body.get("start_date",  route.start_date)
-    route.budget      = body.get("budget",       route.budget)
+    route.start_date = body.get("start_date", route.start_date)
+    route.budget = body.get("budget", route.budget)
 
     new_steps = body.get("steps")
     if new_steps is not None:
-        # Borrar steps viejos (cascade borra sus imágenes también)
         RouteStep.query.filter_by(route_id=route.id).delete()
         db.session.flush()
 
-        allowed_types = {"vuelo","aeropuerto","vip","hotel","restaurante",
-                         "cafe","lugar","transporte","otro"}
+        allowed_types = {"vuelo","aeropuerto","vip","hotel","restaurante","cafe","lugar","transporte","otro"}
 
         for i, s in enumerate(new_steps):
-            step_type  = (s.get("type")  or "").strip().lower()
+            step_type = (s.get("type") or "").strip().lower()
             step_title = (s.get("title") or "").strip()
             if not step_type or step_type not in allowed_types:
                 return jsonify({"msg": f"Step #{i} tiene type inválido"}), 400
@@ -537,11 +773,13 @@ def update_route(route_id):
 
             for img_url in (s.get("images") or []):
                 if img_url:
+                    
                     db.session.add(RouteStepImage(url=img_url, step_id=step.id))
 
     db.session.commit()
     return jsonify({"msg": "Ruta actualizada", "route": route.serialize()}), 200
 
+# ----------------- ADMIN / SETTINGS -----------------
 @api.route('/test-mail', methods=['GET'])
 def test_mail():
     try:
@@ -553,5 +791,128 @@ def test_mail():
         mail.send(msg)
         return jsonify({"msg": "Correo enviado correctamente"}), 200
     except Exception as e:
-        # En desarrollo devolver el error para diagnóstico
+        current_app.logger.exception("Error enviando test mail")
         return jsonify({"error": str(e)}), 500
+
+@api.route('/settings/home-background', methods=['GET'])
+@api.route('/home-background', methods=['GET'])
+@api.route('/settings/site/home_background', methods=['GET'])
+@api.route('/public/home-background', methods=['GET'])
+def get_home_background():
+    try:
+        settings_path = os.path.join(current_app.instance_path, 'home_background.json')
+        if os.path.exists(settings_path):
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return jsonify(data), 200
+        return jsonify({"background": None}), 200
+    except Exception:
+        current_app.logger.exception("Error leyendo home_background.json")
+        return jsonify({"background": None, "error": "error leyendo configuración"}), 500
+
+@api.route('/admin/settings/home_background', methods=['POST'])
+@jwt_required()
+@admin_required
+def set_home_background():
+    try:
+        inst_path = current_app.instance_path
+        uploads_dir = os.path.join(inst_path, 'uploads')
+        settings_path = os.path.join(inst_path, 'home_background.json')
+
+        current_app.logger.debug("[bg] instance_path=%s uploads_dir=%s", inst_path, uploads_dir)
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        # file upload
+        if 'background' in request.files and request.files['background'].filename:
+            image_file = request.files['background']
+            if image_file.filename == "":
+                return jsonify({"msg": "Nombre de archivo vacío"}), 400
+            if not allowed_file(image_file.filename, image_file):
+                return jsonify({"msg": "Tipo de archivo no permitido"}), 400
+            try:
+                image_file.seek(0, os.SEEK_END)
+                size = image_file.tell()
+                image_file.seek(0)
+                if size > MAX_FILE_SIZE:
+                    return jsonify({"msg": "Archivo demasiado grande"}), 400
+            except Exception:
+                current_app.logger.debug("[bg] no se pudo determinar tamaño")
+
+            filename = f"home_bg_{int(time())}_{secure_filename(image_file.filename)}"
+            save_path = os.path.join(uploads_dir, filename)
+            try:
+                image_file.save(save_path)
+            except Exception as ex:
+                current_app.logger.exception("[bg] fallo al guardar el archivo")
+                return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
+
+            file_url = f"/api/uploads/{filename}"
+            try:
+                with open(settings_path, 'w', encoding='utf-8') as f:
+                    json.dump({"background": file_url, "updated_at": datetime.utcnow().isoformat()}, f)
+            except Exception:
+                current_app.logger.exception("[bg] fallo al escribir home_background.json")
+                return jsonify({"background": file_url, "warning": "No se pudo escribir home_background.json"}), 200
+            return jsonify({"background": file_url}), 200
+
+        # json url
+        if request.is_json:
+            body = request.get_json(silent=True) or {}
+            bg_url = body.get('background') or body.get('url')
+            if not bg_url:
+                return jsonify({"msg": "background URL requerida"}), 400
+            try:
+                with open(settings_path, 'w', encoding='utf-8') as f:
+                    json.dump({"background": bg_url, "updated_at": datetime.utcnow().isoformat()}, f)
+            except Exception:
+                current_app.logger.exception("[bg] fallo al escribir home_background.json (json body)")
+                return jsonify({"msg": "Error escribiendo configuración", "error": "error guardando"}), 500
+            return jsonify({"background": bg_url}), 200
+
+        return jsonify({"msg": "Envía un archivo 'background' o JSON con 'background'"}), 400
+
+    except Exception:
+        current_app.logger.exception("Error guardando home background")
+        return jsonify({"msg": "Error interno", "error": "exception"}), 500
+    
+# ----------------- ADMIN USERS -----------------  
+@api.route('/admin/users', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_all_users():
+    users = User.query.order_by(User.id.asc()).all()
+    return jsonify([u.serialize() for u in users]), 200
+
+
+@api.route('/admin/users/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def admin_delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"msg": "Usuario eliminado"}), 200
+
+
+@api.route('/admin/users/<int:user_id>', methods=['PUT'])
+@jwt_required()
+@admin_required
+def admin_update_user(user_id):
+    user = User.query.get_or_404(user_id)
+    data = request.get_json(silent=True) or {}
+    if 'is_admin' in data:
+        user.is_admin = bool(data['is_admin'])
+    db.session.commit()
+    return jsonify(user.serialize()), 200
+
+@api.route('/users/<int:user_id>/public', methods=['GET'])
+def get_user_public(user_id):
+    """Perfil público — no requiere autenticación."""
+    user = User.query.get_or_404(user_id)
+    return jsonify({
+        "id": user.id,
+        "name": getattr(user, "name", None),
+        "profile_pic": getattr(user, "profile_pic", None),
+        "background": getattr(user, "background", None),
+        # NO incluir email ni datos sensibles
+    }), 200

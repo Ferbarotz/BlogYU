@@ -5,6 +5,7 @@ import PostCard from "../components/PostCard";
 import RouteCard from "../components/RouteCard";
 import { API_BASE } from "../api/backend";
 
+
 const CATEGORIES = [
   { id: "todos", name: "🌍 Todos" },
   { id: "hoteles", name: "🏨 Hoteles" },
@@ -34,6 +35,8 @@ const Home = () => {
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "null");
 
+  
+
   // Normaliza URLs (resuelve relativas con API_BASE o window.location.origin)
   const normalizeUrl = (url) => {
     if (!url) return null;
@@ -53,6 +56,7 @@ const Home = () => {
   // ---------------- Hooks (todos antes de cualquier return) ----------------
 
   // Fetch feed
+  console.log("Home montado — API_BASE:", API_BASE);
   useEffect(() => {
     Promise.all([
       fetch(`${API_BASE}/api/posts`).then(r => (r.ok ? r.json() : [])),
@@ -129,7 +133,7 @@ const Home = () => {
             const resolved = typeof bg === "string" ? bg : (bg.url || null);
             if (resolved) {
               setGlobalHomeBg(resolved);
-              try { localStorage.setItem("globalHomeBg", resolved); } catch (e) {}
+              try { localStorage.setItem("globalHomeBg", resolved); } catch (e) { }
               return resolved;
             }
           }
@@ -180,15 +184,27 @@ const Home = () => {
     } catch (e) {
       console.warn("No se pudo aplicar background al body:", e);
     }
-    // no return cleanup aquí; tenemos otro effect que restaura al desmontar
   }, [token, globalHomeBg]);
 
   // Limpieza final: restaurar body background cuando componente desmonta
   useEffect(() => {
     return () => {
-      try { document.body.style.backgroundImage = ""; document.body.style.backgroundColor = ""; } catch (e) {}
+      try { document.body.style.backgroundImage = ""; document.body.style.backgroundColor = ""; } catch (e) { }
     };
   }, []);
+
+  // Cerrar modal con Esc si está abierto
+  useEffect(() => {
+    if (!adminEditing) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        handleCancelEdit();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminEditing]);
 
   // ---------------- Fin hooks ----------------
 
@@ -225,6 +241,20 @@ const Home = () => {
     fileInputRef.current._selectedFile = null;
   };
 
+  const applyBodyBackground = (bg) => {
+    try {
+      const bgUrl = normalizeUrl(bg);
+      document.body.style.backgroundImage = `url(${bgUrl})`;
+      document.body.style.backgroundSize = "cover";
+      document.body.style.backgroundPosition = "center";
+      document.body.style.backgroundRepeat = "no-repeat";
+      document.body.style.backgroundAttachment = "fixed";
+      document.body.style.backgroundColor = "#071017";
+    } catch (e) {
+      console.warn("Error aplicando background al body:", e);
+    }
+  };
+
   const handleUploadHomeBackground = async () => {
     if (!isAdmin) return alert("Solo administradores pueden cambiar el fondo.");
     const selectedFile = fileInputRef.current._selectedFile;
@@ -237,7 +267,8 @@ const Home = () => {
       if (selectedFile) {
         const fd = new FormData();
         fd.append("background", selectedFile);
-        const uploadRes = await fetch(`${API_BASE}/api/admin/home-background`, {
+        // AJUSTE: He cambiado la ruta para que apunte a settings/home_background
+        const uploadRes = await fetch(`${API_BASE}/api/admin/settings/home_background`, {
           method: "POST",
           headers: tokenLocal ? { Authorization: `Bearer ${tokenLocal}` } : {},
           body: fd
@@ -251,12 +282,17 @@ const Home = () => {
         }
         const newBg = data?.background || data?.url || txt;
         setGlobalHomeBg(newBg);
-        try { localStorage.setItem("globalHomeBg", newBg); } catch (e) {}
-        setPreviewBg(null);
-        urlInputRef.current && (urlInputRef.current.value = "");
+        try { localStorage.setItem("globalHomeBg", newBg); } catch (e) { }
+        // Mostrar cambio inmediatamente (preview + aplicar body)
+        setPreviewBg(newBg);
+        applyBodyBackground(newBg);
+        // Limpiar selección local
+        fileInputRef.current._selectedFile = null;
+        setAdminEditing(false);
+        if (window.refreshGlobalHomeBg) window.refreshGlobalHomeBg();
         alert("Fondo del Home actualizado.");
       } else {
-        const setRes = await fetch(`${API_BASE}/api/admin/home-background`, {
+        const setRes = await fetch(`${API_BASE}/api/admin/settings/home_background`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -273,16 +309,18 @@ const Home = () => {
         }
         const newBg = data?.background || imageUrl;
         setGlobalHomeBg(newBg);
-        try { localStorage.setItem("globalHomeBg", newBg); } catch (e) {}
-        setPreviewBg(null);
+        try { localStorage.setItem("globalHomeBg", newBg); } catch (e) { }
+        // Mostrar cambio inmediatamente
+        setPreviewBg(newBg);
+        applyBodyBackground(newBg);
         urlInputRef.current && (urlInputRef.current.value = "");
+        setAdminEditing(false);
+        if (window.refreshGlobalHomeBg) window.refreshGlobalHomeBg();
         alert("Fondo del Home actualizado (URL).");
       }
-      setAdminEditing(false);
-      if (window.refreshGlobalHomeBg) window.refreshGlobalHomeBg();
     } catch (err) {
       console.error("Error guardando home background:", err);
-      alert("Error de conexión al guardar el fondo. Revisa la consola.");
+      alert("Error de conexión al guardar el fondo.");
     } finally {
       setUploadingBg(false);
     }
@@ -379,15 +417,65 @@ const Home = () => {
 
       {/* Admin modal */}
       {adminEditing && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ width: "100%", maxWidth: 920, background: "#0b0e12", borderRadius: 12, padding: 18, border: "1px solid rgba(255,255,255,0.04)" }}>
+        // overlay cierra si haces click fuera del contenido
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={handleCancelEdit}
+        >
+          <div
+            style={{ width: "100%", maxWidth: 920, background: "#0b0e12", borderRadius: 12, padding: 18, border: "1px solid rgba(255,255,255,0.04)" }}
+            onClick={(e) => e.stopPropagation() /* evitar cierre al click dentro del modal */}
+          >
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 style={{ margin: 0, color: "#fff" }}>Editar fondo del Home (solo admin)</h5>
               <div>
-                <button className="btn btn-sm me-2" onClick={handleCancelEdit}>Cancelar</button>
-                <button className="btn btn-sm" disabled={uploadingBg} onClick={handleUploadHomeBackground} style={{ background: "linear-gradient(135deg,#00f2fe,#4facfe)", color: "#000" }}>
-                  {uploadingBg ? "Guardando..." : "Guardar"}
-                </button>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  {/* Botón Cancelar */}
+                  <button
+                    className="btn btn-sm"
+                    onClick={handleCancelEdit}
+                    style={{
+                      minWidth: 110,
+                      padding: "6px 12px",
+                      background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+                      color: "#000",
+                      fontWeight: "700",
+                      border: "none",
+                      borderRadius: 6,
+                      boxShadow: "0 2px 6px rgba(255,78,80,0.25)",
+                      cursor: "pointer",
+                      transition: "transform 0.2s ease",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"}
+                    onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
+                  >
+                    Cancelar
+                  </button>
+
+                  {/* Botón Guardar */}
+                  <button
+                    className="btn btn-sm"
+                    disabled={uploadingBg}
+                    onClick={handleUploadHomeBackground}
+                    style={{
+                      minWidth: 110,
+                      padding: "6px 12px",
+                      background: "linear-gradient(135deg,#00f2fe,#4facfe)",
+                      color: "#000",
+                      fontWeight: "700",
+                      border: "none",
+                      borderRadius: 6,
+                      boxShadow: "0 2px 6px rgba(0,242,254,0.15)",
+                      cursor: uploadingBg ? "not-allowed" : "pointer",
+                      transition: "transform 0.2s ease",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"}
+                    onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
+                  >
+                    {uploadingBg ? "Guardando..." : "Guardar"}
+                  </button>
+                </div>
+
               </div>
             </div>
 

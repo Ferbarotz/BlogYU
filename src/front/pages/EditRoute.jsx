@@ -62,9 +62,22 @@ const EditRoute = () => {
           description: s.description || "",
           rating:      s.rating      || 5,
           location:    s.location    || "",
-          images:      (s.images || []).map(img =>
-            img.url.startsWith("http") ? img.url : `${API_BASE}${img.url}`
-          ),
+          images: (() => {
+            const raw = s.images || [];
+            const urls = raw.map(img => {
+              if (!img) return null;
+              if (typeof img === "string") return img.trim();
+              if (img.url) return String(img.url).trim();
+              if (img.src) return String(img.src).trim();
+              if (img.path) return String(img.path).trim();
+              return null;
+            }).filter(Boolean).map(url => {
+              if (/^https?:\/\//i.test(url)) return url;
+              if (url.startsWith("/")) return `${API_BASE.replace(/\/$/, "")}${url}`;
+              return url;
+            });
+            return [...new Set(urls)];
+          })(),
           newFiles:    [],
           newPreviews: [],
           dragOver:    false,
@@ -97,21 +110,33 @@ const EditRoute = () => {
   };
 
   // ── Fotos por step ──
-  const addFiles = (idx, files) => {
-    const step = steps[idx];
-    const remaining = MAX_PHOTOS - step.images.length - step.newFiles.length;
-    const valid = Array.from(files).filter(f => f.type.startsWith("image/")).slice(0, remaining);
-    if (!valid.length) return;
-    valid.forEach(f => {
-      const reader = new FileReader();
-      reader.onload = e =>
-        updateStep(idx, {
-          newFiles:    [...steps[idx].newFiles,    f],
-          newPreviews: [...steps[idx].newPreviews, e.target.result],
-        });
-      reader.readAsDataURL(f);
-    });
-  };
+ const addFiles = (idx, files) => {
+  const valid = Array.from(files)
+    .filter(f => f.type.startsWith("image/"));
+
+  if (!valid.length) return;
+
+  // Leer todos como base64 primero, luego actualizar estado UNA sola vez
+  const promises = valid.map(f => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => resolve({ file: f, preview: e.target.result });
+    reader.readAsDataURL(f);
+  }));
+
+  Promise.all(promises).then(results => {
+    setSteps(prev => prev.map((s, i) => {
+      if (i !== idx) return s;
+      const remaining = MAX_PHOTOS - s.images.length - s.newFiles.length;
+      if (remaining <= 0) return s;
+      const toAdd = results.slice(0, remaining);
+      return {
+        ...s,
+        newFiles:    [...s.newFiles,    ...toAdd.map(r => r.file)],
+        newPreviews: [...s.newPreviews, ...toAdd.map(r => r.preview)],
+      };
+    }));
+  });
+};
 
   const removeExistingImg = (stepIdx, imgIdx) =>
     updateStep(stepIdx, { images: steps[stepIdx].images.filter((_, i) => i !== imgIdx) });
@@ -159,7 +184,7 @@ const EditRoute = () => {
           description: step.description,
           rating:      step.rating,
           location:    step.location,
-          images:      [...step.images, ...uploadedUrls],
+          images: [...new Set([...step.images, ...uploadedUrls])],
         });
       }
 
@@ -529,4 +554,4 @@ const EditRoute = () => {
   );
 };
 
-export default EditRoute;
+export default EditRoute; 

@@ -18,13 +18,14 @@ const EditPost = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [formData, setFormData]         = useState({ title: "", content: "", category: "" });
-  const [existingImages, setExistingImages] = useState([]);
-  const [newFiles, setNewFiles]         = useState([]);
-  const [newPreviews, setNewPreviews]   = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [saving, setSaving]             = useState(false);
-  const [dragOver, setDragOver]         = useState(false);
+  const [formData, setFormData]             = useState({ title: "", content: "", category: "" });
+  const [existingImages, setExistingImages] = useState([]); // { id, url }
+  const [newFiles, setNewFiles]             = useState([]);
+  const [newPreviews, setNewPreviews]       = useState([]);
+  const [loading, setLoading]               = useState(true);
+  const [saving, setSaving]                 = useState(false);
+  const [dragOver, setDragOver]             = useState(false);
+  const [error, setError]                   = useState("");
 
   useEffect(() => {
     const fetchPost = async () => {
@@ -39,11 +40,10 @@ const EditPost = () => {
           category: data.category || "otros"
         });
 
-        // Cargar imágenes existentes desde el array images
         if (data.images && data.images.length > 0) {
           setExistingImages(
             data.images
-              .sort((a, b) => a.order - b.order)
+              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
               .map(img => ({
                 id:  img.id,
                 url: img.url.startsWith("http") ? img.url : `${API_BASE}${img.url}`
@@ -55,6 +55,7 @@ const EditPost = () => {
         }
       } catch (err) {
         console.error(err);
+        setError("Error cargando el post");
       } finally {
         setLoading(false);
       }
@@ -77,42 +78,78 @@ const EditPost = () => {
   };
 
   const removeExisting = (i) => setExistingImages(prev => prev.filter((_, idx) => idx !== i));
+
   const removeNew = (i) => {
     setNewFiles(prev    => prev.filter((_, idx) => idx !== i));
     setNewPreviews(prev => prev.filter((_, idx) => idx !== i));
   };
 
-  const handleDrop = (e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    addFiles(e.dataTransfer.files);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.title.trim() || !formData.content.trim()) {
+      setError("Título y contenido son obligatorios");
+      return;
+    }
     setSaving(true);
+    setError("");
+
     try {
       const fd = new FormData();
       fd.append("title",    formData.title);
       fd.append("content",  formData.content);
       fd.append("category", formData.category);
+
+      // ✅ IDs de imágenes existentes que el usuario quiere CONSERVAR
+      const keepIds = existingImages
+        .filter(img => img.id !== null)
+        .map(img => img.id);
+      fd.append("keep_image_ids", JSON.stringify(keepIds));
+
+      // ✅ Nuevas fotos a agregar
       newFiles.forEach(f => fd.append("images", f));
 
       const res = await fetch(`${API_BASE}/api/posts/${id}`, {
         method: "PUT",
-        headers: { ...authHeaders() },
+        headers: { ...authHeaders() }, // sin Content-Type para que el browser ponga el boundary
         body: fd
       });
 
-      if (res.ok) navigate("/my-posts");
-      else console.error("Error al actualizar");
+      if (res.ok) {
+        navigate("/my-posts");
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.msg || "Error al guardar los cambios");
+      }
     } catch (err) {
       console.error(err);
+      setError("Error de conexión");
     } finally {
       setSaving(false);
     }
   };
 
+  // ── Estilos reutilizables ──────────────────────────────────────────────────
+  const labelStyle = {
+    color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
+    letterSpacing: "2px", textTransform: "uppercase",
+    marginBottom: "8px", display: "block"
+  };
+  const inputStyle = {
+    width: "100%", background: "rgba(255,255,255,0.05)",
+    border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
+    color: "#fff", padding: "12px 16px", outline: "none", boxSizing: "border-box"
+  };
+
   if (loading) return (
     <div style={{ background: "#0d1117", minHeight: "100vh", display: "flex",
-      alignItems: "center", justifyContent: "center", color: "#fff" }}>
-      Cargando...
+      alignItems: "center", justifyContent: "center" }}>
+      <div className="spinner-border" style={{ color: "#f9d423" }} />
     </div>
   );
 
@@ -136,11 +173,12 @@ const EditPost = () => {
       </div>
 
       <div className="container py-5" style={{ maxWidth: "860px" }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)",
-            color: "rgba(255,255,255,0.7)", borderRadius: "8px", padding: "8px 16px",
-            cursor: "pointer", marginBottom: "24px" }}>
+
+        <button onClick={() => navigate(-1)} style={{
+          background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)",
+          color: "rgba(255,255,255,0.7)", borderRadius: "8px", padding: "8px 16px",
+          cursor: "pointer", marginBottom: "24px"
+        }}>
           ← Volver
         </button>
 
@@ -151,17 +189,12 @@ const EditPost = () => {
 
           {/* TÍTULO */}
           <div style={{ marginBottom: "20px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px", display: "block" }}>
-              Título *
-            </label>
+            <label style={labelStyle}>Título *</label>
             <input
               value={formData.title}
               onChange={e => setFormData({ ...formData, title: e.target.value })}
               required
-              style={{ width: "100%", background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
-                color: "#fff", padding: "12px 16px", outline: "none", boxSizing: "border-box" }}
+              style={inputStyle}
               onFocus={e => e.target.style.border = "1px solid rgba(249,212,35,0.5)"}
               onBlur={e  => e.target.style.border = "1px solid rgba(255,255,255,0.1)"}
             />
@@ -169,10 +202,7 @@ const EditPost = () => {
 
           {/* CATEGORÍA */}
           <div style={{ marginBottom: "20px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase", marginBottom: "10px", display: "block" }}>
-              Categoría *
-            </label>
+            <label style={labelStyle}>Categoría *</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
               {CATEGORIES.map(c => (
                 <button key={c.id} type="button"
@@ -194,19 +224,13 @@ const EditPost = () => {
 
           {/* CONTENIDO */}
           <div style={{ marginBottom: "20px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px", display: "block" }}>
-              Contenido *
-            </label>
+            <label style={labelStyle}>Contenido *</label>
             <textarea
               rows={7}
               value={formData.content}
               onChange={e => setFormData({ ...formData, content: e.target.value })}
               required
-              style={{ width: "100%", background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px",
-                color: "#fff", padding: "14px 18px", resize: "vertical",
-                outline: "none", boxSizing: "border-box", lineHeight: "1.6" }}
+              style={{ ...inputStyle, resize: "vertical", lineHeight: "1.6" }}
               onFocus={e => e.target.style.border = "1px solid rgba(249,212,35,0.5)"}
               onBlur={e  => e.target.style.border = "1px solid rgba(255,255,255,0.1)"}
             />
@@ -218,8 +242,7 @@ const EditPost = () => {
 
           {/* FOTOS */}
           <div style={{ marginBottom: "28px" }}>
-            <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem",
-              letterSpacing: "2px", textTransform: "uppercase", marginBottom: "8px", display: "block" }}>
+            <label style={labelStyle}>
               Fotos{" "}
               <span style={{ color: "rgba(255,255,255,0.35)", fontWeight: 400,
                 textTransform: "none", letterSpacing: 0 }}>
@@ -233,12 +256,14 @@ const EditPost = () => {
                 <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem", marginBottom: "8px" }}>
                   Fotos actuales:
                 </p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+                <div style={{ display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
                   gap: "10px", marginBottom: "16px" }}>
                   {existingImages.map((img, i) => (
-                    <div key={i} style={{ position: "relative", borderRadius: "10px",
+                    <div key={img.id ?? i} style={{ position: "relative", borderRadius: "10px",
                       overflow: "hidden", aspectRatio: "1" }}>
-                      <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img src={img.url} alt=""
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       {i === 0 && (
                         <div style={{ position: "absolute", bottom: "6px", left: "6px",
                           background: "rgba(249,212,35,0.9)", color: "#000",
@@ -259,7 +284,7 @@ const EditPost = () => {
               </>
             )}
 
-            {/* Drop zone */}
+            {/* Drop zone — solo si hay espacio */}
             {totalPhotos < MAX_PHOTOS && (
               <div
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
@@ -269,7 +294,8 @@ const EditPost = () => {
                 style={{
                   border: dragOver ? "2px dashed #f9d423" : "2px dashed rgba(255,255,255,0.15)",
                   borderRadius: "16px", padding: "24px 20px", textAlign: "center",
-                  cursor: "pointer", background: dragOver ? "rgba(249,212,35,0.05)" : "rgba(255,255,255,0.02)",
+                  cursor: "pointer",
+                  background: dragOver ? "rgba(249,212,35,0.05)" : "rgba(255,255,255,0.02)",
                   transition: "all 0.2s", marginBottom: "16px"
                 }}>
                 <div style={{ fontSize: "2rem", marginBottom: "6px" }}>📸</div>
@@ -281,21 +307,25 @@ const EditPost = () => {
                   Máximo {MAX_PHOTOS} fotos · JPG, PNG, WEBP
                 </p>
                 <input id="editPhotoInput" type="file" accept="image/*" multiple
-                  style={{ display: "none" }} onChange={e => addFiles(e.target.files)} />
+                  style={{ display: "none" }}
+                  onChange={e => addFiles(e.target.files)} />
               </div>
             )}
 
-            {/* Previews nuevas */}
+            {/* Previews nuevas fotos */}
             {newPreviews.length > 0 && (
               <>
                 <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem", marginBottom: "8px" }}>
                   Fotos nuevas a subir:
                 </p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: "10px" }}>
+                <div style={{ display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: "10px" }}>
                   {newPreviews.map((src, i) => (
                     <div key={i} style={{ position: "relative", borderRadius: "10px",
                       overflow: "hidden", aspectRatio: "1" }}>
-                      <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img src={src} alt=""
+                        style={{ width: "100%", height: "100%", objectFit: "cover",
+                          border: "2px solid rgba(0,242,254,0.4)", borderRadius: "10px" }} />
                       <button type="button" onClick={() => removeNew(i)}
                         style={{ position: "absolute", top: "6px", right: "6px",
                           background: "rgba(220,53,69,0.85)", border: "none", color: "#fff",
@@ -310,11 +340,22 @@ const EditPost = () => {
             )}
           </div>
 
+          {/* ERROR */}
+          {error && (
+            <div style={{ background: "rgba(220,53,69,0.15)", border: "1px solid rgba(220,53,69,0.4)",
+              borderRadius: "10px", padding: "12px 16px", color: "#ff6b7a",
+              marginBottom: "20px", fontSize: "0.88rem" }}>
+              ⚠️ {error}
+            </div>
+          )}
+
           {/* BOTONES */}
           <div style={{ display: "flex", gap: "12px" }}>
             <button type="submit" disabled={saving} style={{
               flex: 1, padding: "14px", borderRadius: "30px",
-              background: saving ? "rgba(249,212,35,0.4)" : "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+              background: saving
+                ? "rgba(249,212,35,0.4)"
+                : "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
               border: "none", color: "#000", fontWeight: 800, fontSize: "0.95rem",
               cursor: saving ? "not-allowed" : "pointer"
             }}>

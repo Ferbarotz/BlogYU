@@ -1,12 +1,6 @@
 // src/front/api/backend.js
-// Usa window.__API_BASE (definido en public/index.html) si existe.
-// Si no, intenta process.env.REACT_APP_API_BASE (cuando builds lo define).
-// Finalmente fallback a window.location.origin.
-
-const API_BASE =
-  (typeof window !== "undefined" && window.__API_BASE) ||
-  (typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE) ||
-  window.location.origin;
+// Forzamos la URL del backend para que el frontend sepa a dónde ir
+const API_BASE = "https://super-duper-engine-7vw7gxv9w9xvfj9j5-5000.app.github.dev";
 
 export default API_BASE;
 export { API_BASE };

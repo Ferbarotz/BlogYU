@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
+import { compressImage } from "../utils/imageCompression";
+import UploadProgress from "../components/UploadProgress";
 
 const DEFAULT_CATEGORIES = [
   { id: "hoteles",      name: "🏨 Hoteles" },
@@ -25,6 +27,7 @@ const NewPost = () => {
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState(null);
   const [dragOver, setDragOver]     = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -52,13 +55,21 @@ const NewPost = () => {
     return () => { mounted = false; };
   }, []);
 
-  const addFiles = (files) => {
+  const addFiles = async (files) => {
     const valid = Array.from(files).filter(f => f.type.startsWith("image/"));
     const remaining = MAX_PHOTOS - imageFiles.length;
     const toAdd = valid.slice(0, remaining);
     if (!toAdd.length) return;
-    setImageFiles(prev => [...prev, ...toAdd]);
-    toAdd.forEach(f => {
+
+    const compressedFiles = [];
+    for (const file of toAdd) {
+      const compressed = await compressImage(file);
+      compressedFiles.push(compressed);
+    }
+
+    setImageFiles(prev => [...prev, ...compressedFiles]);
+
+    compressedFiles.forEach(f => {
       const reader = new FileReader();
       reader.onload = (e) => setPreviews(prev => [...prev, e.target.result]);
       reader.readAsDataURL(f);
@@ -85,23 +96,38 @@ const NewPost = () => {
 
     try {
       setSaving(true);
+      setUploadProgress(0);
+
       const fd = new FormData();
       fd.append("title",    title);
       fd.append("content",  content);
       fd.append("category", category);
       imageFiles.forEach(f => fd.append("images", f));
 
-      const res = await fetch(`${API_BASE}/api/posts`, {
-        method: "POST",
-        headers: { ...authHeaders() },
-        body: fd
-      });
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_BASE}/api/posts`);
+        const headers = authHeaders();
+        Object.entries(headers).forEach(([key, value]) => {
+          xhr.setRequestHeader(key, value);
+        });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data?.msg || data?.message || `Error ${res.status}`);
-        return;
-      }
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(percent);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+          else reject(new Error(`Error ${xhr.status}: ${xhr.statusText}`));
+        };
+
+        xhr.onerror = () => reject(new Error("Error de red"));
+
+        xhr.send(fd);
+      });
 
       navigate("/");
     } catch (err) {
@@ -109,6 +135,7 @@ const NewPost = () => {
       setError("Error de conexión. Intenta de nuevo.");
     } finally {
       setSaving(false);
+      setUploadProgress(0);
     }
   };
 
@@ -264,7 +291,6 @@ const NewPost = () => {
                 />
               </div>
             ) : (
-              // If there are previews, show them in the same grid used before
               <div style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
@@ -312,7 +338,8 @@ const NewPost = () => {
             )}
           </div>
 
-          {/* BUTTONS - Publish styled like MyPosts header button */}
+          {saving && <UploadProgress percent={uploadProgress} label="Subiendo imágenes..." />}
+
           <div style={{ display: "flex", gap: "12px" }}>
             <button
               type="submit"
