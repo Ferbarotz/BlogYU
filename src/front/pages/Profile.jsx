@@ -1,45 +1,28 @@
-// src/front/pages/Profile.jsx
 import React, { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { API_BASE } from "../api/backend";
 
 const Profile = () => {
-  const storedUser = JSON.parse(localStorage.getItem("user") || "null");
-  const [user, setUser] = useState(storedUser);
+  const { id } = useParams(); // <-- obtener id del perfil desde URL
+  const [user, setUser] = useState(null);
   const [uploadingBg, setUploadingBg] = useState(false);
   const [uploadingProfile, setUploadingProfile] = useState(false);
   const fileInputBgRef = useRef(null);
 
-  // Estados para el formulario de "Información Personal"
   const [selectedProfileFile, setSelectedProfileFile] = useState(null);
   const [previewProfilePic, setPreviewProfilePic] = useState(null);
   const [profileShape, setProfileShape] = useState(
-    (storedUser && storedUser.profileShape) || localStorage.getItem("profileShape") || "circle"
+    localStorage.getItem("profileShape") || "circle"
   );
   const [social, setSocial] = useState({
-    twitter: storedUser?.social?.twitter || "",
-    instagram: storedUser?.social?.instagram || "",
-    facebook: storedUser?.social?.facebook || "",
-    website: storedUser?.social?.website || ""
+    twitter: "",
+    instagram: "",
+    facebook: "",
+    website: ""
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const handleStorage = () => {
-      const s = JSON.parse(localStorage.getItem("user") || "null");
-      setUser(s);
-      setProfileShape(localStorage.getItem("profileShape") || (s?.profileShape) || "circle");
-      setSocial({
-        twitter: s?.social?.twitter || "",
-        instagram: s?.social?.instagram || "",
-        facebook: s?.social?.facebook || "",
-        website: s?.social?.website || ""
-      });
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
+  // Normaliza URLs devueltas por la API (convierte rutas internas /api/uploads/... a absolute usando API_BASE)
   const normalizeUrl = (url) => {
     if (!url) return null;
     try {
@@ -55,10 +38,40 @@ const Profile = () => {
     }
   };
 
+  // Reconsulta el usuario en el servidor para mantener consistencia tras subidas/patch
+  const fetchUser = async (userId = id) => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/users/${userId}/public`);
+      if (!res.ok) return;
+      const remoteUser = await res.json();
+
+      if (remoteUser.background) remoteUser.background = normalizeUrl(remoteUser.background);
+      if (remoteUser.profile_pic) remoteUser.profile_pic = normalizeUrl(remoteUser.profile_pic);
+      if (remoteUser.profilePic) remoteUser.profilePic = normalizeUrl(remoteUser.profilePic);
+
+      setUser(remoteUser);
+      setProfileShape(remoteUser.profileShape || localStorage.getItem("profileShape") || "circle");
+      setSocial({
+        twitter: remoteUser.social?.twitter || "",
+        instagram: remoteUser.social?.instagram || "",
+        facebook: remoteUser.social?.facebook || "",
+        website: remoteUser.social?.website || ""
+      });
+      localStorage.setItem("user", JSON.stringify(remoteUser));
+    } catch (err) {
+      console.debug("fetchUser error", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUser(id);
+  }, [id]);
+
   // ---------- Background upload (igual que antes) ----------
   const handleUploadBackground = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || !user?.id) return;
     const formData = new FormData();
     formData.append("background", file);
     setUploadingBg(true);
@@ -71,9 +84,17 @@ const Profile = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        if (data.user && data.user.background) data.user.background = normalizeUrl(data.user.background);
-        setUser(data.user);
-        localStorage.setItem("user", JSON.stringify(data.user));
+        if (data.user) {
+          if (data.user.background) data.user.background = normalizeUrl(data.user.background);
+          setUser(data.user);
+          localStorage.setItem("user", JSON.stringify(data.user));
+        } else if (data.background) {
+          const merged = { ...(user || {}), background: normalizeUrl(data.background) };
+          setUser(merged);
+          localStorage.setItem("user", JSON.stringify(merged));
+        } else {
+          fetchUser();
+        }
         alert("Fondo actualizado.");
       } else {
         const errorData = await response.json().catch(() => ({}));
@@ -87,15 +108,52 @@ const Profile = () => {
     }
   };
 
-  // ---------- Selección de foto de perfil (local) ----------
-  const handleSelectProfileFile = (e) => {
+  const handleSelectProfileFile = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || !user?.id) return;
     setSelectedProfileFile(file);
     setPreviewProfilePic(URL.createObjectURL(file));
+
+    setUploadingProfile(true);
+    const fd = new FormData();
+    fd.append("profile", file);
+    const token = localStorage.getItem("token");
+
+    try {
+      const res = await fetch(`${API_BASE}/api/users/${user.id}/profile-pic`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      });
+
+      let data = null;
+      try { data = await res.json(); } catch(e) { data = null; }
+
+      if (res.ok) {
+        const newUrl = data?.profile_pic || data?.profilePic || (data?.user && (data.user.profile_pic || data.user.profilePic));
+        if (newUrl) {
+          const normalized = normalizeUrl(newUrl);
+          const merged = { ...(user || {}), profile_pic: normalized, profilePic: normalized };
+          setUser(merged);
+          localStorage.setItem("user", JSON.stringify(merged));
+          setSelectedProfileFile(null);
+          setPreviewProfilePic(null);
+        } else {
+          await fetchUser();
+        }
+        alert("Foto de perfil actualizada.");
+      } else {
+        const msg = (data && (data.msg || data.error)) || `Status ${res.status}`;
+        alert("Error subiendo avatar: " + msg);
+      }
+    } catch (err) {
+      console.error("Error subiendo avatar:", err);
+      alert("Error de red subiendo avatar. Mira la consola.");
+    } finally {
+      setUploadingProfile(false);
+    }
   };
 
-  // ---------- Persistir forma localmente (y opcionalmente en backend later) ----------
   const persistProfileShapeLocally = (shape) => {
     setProfileShape(shape);
     localStorage.setItem("profileShape", shape);
@@ -104,8 +162,6 @@ const Profile = () => {
     localStorage.setItem("user", JSON.stringify(merged));
   };
 
-  // ---------- Guardar perfil (subir foto si hay y luego PATCH datos) ----------
-  // Versión mejorada con logging para debugging Network/Response
   const handleSaveProfile = async () => {
     if (!user || !user.id) {
       alert("Usuario no encontrado.");
@@ -117,21 +173,28 @@ const Profile = () => {
     try {
       const token = localStorage.getItem("token");
 
-      console.log("Starting save profile. userId:", user.id);
       let updatedUser = { ...(user || {}) };
 
-      // 1) Si hay archivo seleccionado, subirlo primero (POST /api/users/:id/profile-pic)
       if (selectedProfileFile) {
         setUploadingProfile(true);
         const fd = new FormData();
-        fd.append("profilePic", selectedProfileFile);
 
-        console.log("Uploading profile picture to:", `${API_BASE}/api/users/${user.id}/profile-pic`);
-        const uploadRes = await fetch(`${API_BASE}/api/users/${user.id}/profile-pic`, {
-          method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          body: fd,
-        });
+        fd.append("profile", selectedProfileFile);
+
+        let uploadRes;
+        try {
+          uploadRes = await fetch(`${API_BASE}/api/users/${user.id}/profile-pic`, {
+            method: "POST",
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: fd,
+          });
+        } catch (networkErr) {
+          console.error("Network error uploading profile pic:", networkErr);
+          alert("Error de red subiendo la foto de perfil. Revisa la consola.");
+          setUploadingProfile(false);
+          setSaving(false);
+          return;
+        }
 
         const uploadText = await uploadRes.text();
         console.log("UPLOAD response status:", uploadRes.status, "body:", uploadText);
@@ -140,15 +203,24 @@ const Profile = () => {
         try { upData = JSON.parse(uploadText); } catch (e) { upData = null; }
 
         if (uploadRes.ok) {
-          if (upData?.user?.profilePic) {
-            upData.user.profilePic = normalizeUrl(upData.user.profilePic);
-            updatedUser = { ...updatedUser, ...upData.user };
-          } else if (upData?.profilePic) {
-            // en caso de que el backend devuelva solo la url
-            updatedUser = { ...updatedUser, profilePic: normalizeUrl(upData.profilePic) };
+          const returnedUser = upData?.user;
+          const returnedProfilePic = upData?.profile_pic || upData?.profilePic;
+
+          if (returnedUser) {
+            if (returnedUser.profile_pic) returnedUser.profile_pic = normalizeUrl(returnedUser.profile_pic);
+            if (returnedUser.profilePic) returnedUser.profilePic = normalizeUrl(returnedUser.profilePic);
+            updatedUser = { ...updatedUser, ...returnedUser };
+          } else if (returnedProfilePic) {
+            const normalized = normalizeUrl(returnedProfilePic);
+            updatedUser = { ...updatedUser, profile_pic: normalized, profilePic: normalized };
+          } else {
+            await fetchUser();
+            updatedUser = JSON.parse(localStorage.getItem("user") || "null") || updatedUser;
           }
         } else {
-          alert("Error subiendo la foto de perfil: " + (upData?.msg || uploadText || uploadRes.status));
+          let errMsg = uploadRes.status;
+          if (upData && (upData.msg || upData.error)) errMsg = upData.msg || upData.error;
+          alert("Error subiendo la foto de perfil: " + errMsg);
           setUploadingProfile(false);
           setSaving(false);
           return;
@@ -156,8 +228,6 @@ const Profile = () => {
         setUploadingProfile(false);
       }
 
-      // 2) Luego PATCH con datos (profileShape + social links)
-      // Enviamos tanto camelCase como snake_case para mayor compatibilidad
       const bodyToSend = {
         profile_shape: profileShape,
         profileShape,
@@ -168,8 +238,6 @@ const Profile = () => {
           website: social.website || ""
         }
       };
-
-      console.log("PATCH request to:", `${API_BASE}/api/users/${user.id}`, "body:", bodyToSend);
 
       const patchRes = await fetch(`${API_BASE}/api/users/${user.id}`, {
         method: "PATCH",
@@ -188,20 +256,26 @@ const Profile = () => {
 
       if (patchRes.ok) {
         if (patchData?.user) {
-          updatedUser = { ...updatedUser, ...patchData.user };
+          const ruser = patchData.user;
+          if (ruser.background) ruser.background = normalizeUrl(ruser.background);
+          if (ruser.profile_pic) ruser.profile_pic = normalizeUrl(ruser.profile_pic);
+          if (ruser.profilePic) ruser.profilePic = normalizeUrl(ruser.profilePic);
+          updatedUser = { ...updatedUser, ...ruser };
         } else {
           updatedUser = { ...updatedUser, profileShape: profileShape, social: bodyToSend.social };
         }
 
         if (updatedUser.profilePic) updatedUser.profilePic = normalizeUrl(updatedUser.profilePic);
+        if (updatedUser.profile_pic) updatedUser.profile_pic = normalizeUrl(updatedUser.profile_pic);
         if (updatedUser.background) updatedUser.background = normalizeUrl(updatedUser.background);
 
         setUser(updatedUser);
         localStorage.setItem("user", JSON.stringify(updatedUser));
 
-        // limpiar selección
         setSelectedProfileFile(null);
         setPreviewProfilePic(null);
+
+        await fetchUser();
 
         alert("Perfil actualizado correctamente.");
       } else {
@@ -222,6 +296,8 @@ const Profile = () => {
     : "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)";
 
   const avatarBorderRadius = profileShape === "circle" ? "50%" : "12px";
+
+  if (!user) return <div style={{ color: "#fff", padding: 20 }}>Cargando perfil...</div>;
 
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh" }}>
@@ -251,14 +327,14 @@ const Profile = () => {
           style={{
             width: "96px", height: "96px",
             borderRadius: avatarBorderRadius,
-            background: user?.profilePic ? `url(${normalizeUrl(user.profilePic)}) center/cover no-repeat` : "linear-gradient(135deg,#00f2fe,#4facfe)",
+            background: previewProfilePic ? `url(${previewProfilePic}) center/cover no-repeat` : (user?.profilePic ? `url(${normalizeUrl(user.profilePic)}) center/cover no-repeat` : (user?.profile_pic ? `url(${normalizeUrl(user.profile_pic)}) center/cover no-repeat` : (user?.background ? `url(${normalizeUrl(user.background)}) center/cover no-repeat` : "linear-gradient(135deg,#00f2fe,#4facfe)"))),
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: "2.2rem", fontWeight: "900", color: "#000",
             marginBottom: "12px", boxShadow: "0 0 30px rgba(0,242,254,0.25)", overflow: "hidden"
           }}
           title="Foto de perfil"
         >
-          {!user?.profilePic && (user?.name ? user.name.charAt(0).toUpperCase() : "?")}
+          {!previewProfilePic && !user?.profilePic && !user?.profile_pic && !user?.background && (user?.name ? user.name.charAt(0).toUpperCase() : "?")}
         </div>
 
         <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem", textTransform: "uppercase", marginBottom: "6px" }}>
@@ -345,10 +421,10 @@ const Profile = () => {
                 <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "10px" }}>
                   <div style={{
                     width: "72px", height: "72px", borderRadius: profileShape === "circle" ? "50%" : "12px",
-                    background: previewProfilePic ? `url(${previewProfilePic}) center/cover no-repeat` : (user?.profilePic ? `url(${normalizeUrl(user.profilePic)}) center/cover no-repeat` : "linear-gradient(135deg,#00f2fe,#4facfe)"),
+                    background: previewProfilePic ? `url(${previewProfilePic}) center/cover no-repeat` : (user?.profilePic ? `url(${normalizeUrl(user.profilePic)}) center/cover no-repeat` : (user?.profile_pic ? `url(${normalizeUrl(user.profile_pic)}) center/cover no-repeat` : (user?.background ? `url(${normalizeUrl(user.background)}) center/cover no-repeat` : "linear-gradient(135deg,#00f2fe,#4facfe)"))),
                     display: "grid", placeItems: "center", color: "#000", fontWeight: 900, overflow: "hidden", boxShadow: "0 8px 20px rgba(0,0,0,0.6)"
                   }}>
-                    {!previewProfilePic && !user?.profilePic && (user?.name ? user.name.charAt(0).toUpperCase() : "?")}
+                    {!previewProfilePic && !user?.profilePic && !user?.profile_pic && !user?.background && (user?.name ? user.name.charAt(0).toUpperCase() : "?")}
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

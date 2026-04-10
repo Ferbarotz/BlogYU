@@ -1,56 +1,103 @@
 // src/front/api/backend.js
-// Versión robusta para entornos dev remotos (Codespaces, Github.dev, etc.)
-// Preferencia de valores:
-// 1) process.env.REACT_APP_API_BASE (inyectado en build)
-// 2) window.__API_BASE (defínelo en public/index.html si quieres)
-// 3) heurística: si estamos en 8080, intenta cambiar a 5000
-// 4) window.location.origin como fallback
+/**
+ * Devuelve la URL base del backend.
+ * Prioridad:
+ *  1) REACT_APP_BACKEND_URL / BACKEND_URL
+ *  2) Detección Codespaces: transforma -8080. -> -5000.
+ *  3) Fallback: http(s)://hostname:5000
+ */
+function getBackendURL() {
+  const env =
+    (typeof process !== "undefined" &&
+      process.env &&
+      (process.env.REACT_APP_BACKEND_URL || process.env.BACKEND_URL)) ||
+    null;
 
-const envApiBase =
-  (typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE)
-    ? process.env.REACT_APP_API_BASE
-    : undefined;
+  if (env) return env.replace(/\/$/, "");
 
-function inferFromOrigin() {
-  if (typeof window === "undefined") return "http://localhost:5000";
+  const backendPort =
+    (typeof process !== "undefined" &&
+      process.env &&
+      process.env.REACT_APP_BACKEND_PORT) ||
+    "5000";
+
+  if (typeof window === "undefined") return `http://127.0.0.1:${backendPort}`;
+
+  const { hostname, port, protocol } = window.location;
+
+  // Codespaces: something-8080.app.github.dev -> something-5000.app.github.dev
+  if (hostname && hostname.includes("app.github.dev")) {
+    const frontendPort = port || "8080";
+    const replaced = hostname.replace(`-${frontendPort}.`, `-${backendPort}.`);
+    const url = `https://${replaced}`;
+    console.log("[backend.js] Codespace detected, using BACKEND:", url);
+    return url;
+  }
+
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    const url = `${protocol}//${hostname}:${backendPort}`;
+    console.log("[backend.js] Local dev, using BACKEND:", url);
+    return url;
+  }
+
+  const url = `${protocol}//${hostname}:${backendPort}`;
+  console.log("[backend.js] Inferred BACKEND:", url);
+  return url;
+}
+
+export const API_BASE = getBackendURL();
+export default getBackendURL;
+
+/**
+ * authHeaders(extra = {}) -> devuelve un objeto con Authorization si existe token en localStorage.
+ * jsonAuthHeaders() -> devuelve headers con Content-Type: application/json y Authorization si aplica.
+ *
+ * Uso:
+ *   import { authHeaders, jsonAuthHeaders, API_BASE, authFetch } from "../api/backend";
+ *
+ *   fetch(`${API_BASE}/api/endpoint`, { headers: authHeaders() })
+ *   fetch(`${API_BASE}/api/endpoint`, { headers: jsonAuthHeaders(), method: 'POST', body: JSON.stringify(data)})
+ *
+ *   // authFetch permite pasar una ruta relativa o absoluta:
+ *   authFetch('/api/posts', { method: 'GET' })
+ */
+export function authHeaders(extra = {}) {
   try {
-    const protocol = window.location.protocol || "https:";
-    const host = window.location.hostname;
-    const port = window.location.port || "";
-    const origin = window.location.origin || `${protocol}//${host}${port ? `:${port}` : ""}`;
-
-    // Heurística Codespaces / forwarded ports:
-    // - si el frontend está en 8080, intentamos el mismo host con puerto 5000
-    // - si el hostname contiene "-8080.app.github.dev" intentamos "-5000"
-    if (port === "8080" || origin.includes(":8080") || origin.includes("-8080.app.github.dev")) {
-      // intentos seguros de reemplazo
-      if (origin.includes("-8080.app.github.dev")) {
-        return origin.replace("-8080.app.github.dev", "-5000.app.github.dev");
-      }
-      return origin.replace(/:8080$/, ":5000");
-    }
-    // Si el origin ya parece de backend (no 8080), devolvemos origin
-    return origin;
+    const token = localStorage.getItem("token");
+    const headers = { ...extra };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return headers;
   } catch (e) {
-    return "http://localhost:5000";
+    // si localStorage no está disponible (SSR o tests), devolver only extra
+    return { ...extra };
   }
 }
 
-const API_BASE = envApiBase ||
-  (typeof window !== "undefined" && window.__API_BASE) ||
-  inferFromOrigin();
+export function jsonAuthHeaders() {
+  return authHeaders({ "Content-Type": "application/json" });
+}
 
-console.info("[backend] API_BASE =", API_BASE);
+/**
+ * authFetch(path, options)
+ * - path: puede ser ruta relativa como '/api/posts' o ruta sin slash 'api/posts' o URL absoluta
+ * - options: fetch options (method, body, headers, ...)
+ *
+ * Devuelve la promesa de fetch. No hace parse automático.
+ */
+export async function authFetch(path, options = {}) {
+  const base = (API_BASE || "").replace(/\/$/, "");
+  const url =
+    typeof path === "string" && /^https?:\/\//i.test(path)
+      ? path
+      : path && path.startsWith("/")
+      ? `${base}${path}`
+      : `${base}/${path}`;
 
-export default API_BASE;
-export { API_BASE };
+  // combinar headers: authHeaders < options.headers
+  const combinedHeaders = { ...(authHeaders()), ...(options.headers || {}) };
+  const finalOptions = { ...options, headers: combinedHeaders };
 
-// authHeaders: retorna headers (si hay token lo incluye)
-export const authHeaders = () => {
-  try {
-    const token = localStorage.getItem("token");
-    return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
-  } catch (e) {
-    return { "Content-Type": "application/json" };
-  }
-};
+  console.log("[authFetch] ", finalOptions.method || "GET", url, finalOptions);
+
+  return fetch(url, finalOptions);
+}

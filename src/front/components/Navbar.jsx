@@ -22,128 +22,96 @@ const Navbar = () => {
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid rgba(0,242,254,0.2)",
         boxShadow: "0 4px 30px rgba(0,0,0,0.4)",
-        padding: "12px 0"
+        padding: "10px 0"
       }}
     >
-      <div className="container d-flex align-items-center">
+      <div className="container d-flex align-items-center text-white">
 
-        {/* LOGO */}
-        <Link className="navbar-brand d-flex align-items-center gap-3" to="/" style={{ textDecoration: "none" }}>
+        {/* LOGO SECCIÓN */}
+        <Link className="navbar-brand d-flex align-items-center gap-2" to="/" style={{ textDecoration: "none" }}>
           <img
             src={logo}
             alt="BlogYU Logo"
             style={{
-              width: "96px",        // aumentado
-              height: "96px",       // aumentado
+              width: "70px",
+              height: "70px",
               objectFit: "contain",
-              filter: "drop-shadow(0 0 12px rgba(0,242,254,0.45))"
+              filter: "drop-shadow(0 0 8px rgba(0,242,254,0.3))"
             }}
           />
           <div className="d-flex flex-column justify-content-center" style={{ lineHeight: "1" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "4px" }}>
+              <span style={{ fontSize: "1.8rem", fontWeight: "900", color: "#fff", letterSpacing: "-1px" }}>Blog</span>
               <span style={{
-                fontSize: "2.2rem",    // aumentado
-                fontWeight: "900",
-                color: "#fff",
-                letterSpacing: "-1.5px",
-                fontFamily: "'Inter', sans-serif",
-                textShadow: "0 0 20px rgba(255,255,255,0.08)"
-              }}>Blog</span>
-              <span style={{
-                fontSize: "2.2rem",    // aumentado
+                fontSize: "1.8rem",
                 fontWeight: "900",
                 background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
-                letterSpacing: "-1.5px",
-                fontFamily: "'Inter', sans-serif",
-                filter: "drop-shadow(0 0 10px rgba(0,242,254,0.45))"
+                filter: "drop-shadow(0 0 5px rgba(0,242,254,0.3))"
               }}>YU</span>
             </div>
-            <small style={{
-              fontSize: "0.65rem",   // ligeramente aumentado
-              letterSpacing: "3px",
-              color: "#f9d423",
-              textTransform: "uppercase",
-              fontWeight: "800",
-              marginTop: "2px"
-            }}>Comunidad Viajera</small>
+            <small style={{ fontSize: "0.55rem", letterSpacing: "2.5px", color: "#f9d423", textTransform: "uppercase", fontWeight: "800" }}>
+              Comunidad Viajera
+            </small>
           </div>
         </Link>
 
-        <button className="navbar-toggler border-0" type="button"
-          data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <button className="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
           <span className="navbar-toggler-icon"></span>
         </button>
 
         <div className="collapse navbar-collapse" id="navbarNav">
-          <ul className="navbar-nav ms-auto align-items-center gap-2">
+          <ul className="navbar-nav ms-auto align-items-center gap-3">
 
             {token ? (
               <>
+                {/* BOTÓN ADMIN - Estilo Moderno y Acorde */}
+                {user && user.is_admin && (
+                  <li className="nav-item">
+                    <Link to="/admin" 
+                      className="btn btn-sm fw-bold px-3 d-flex align-items-center gap-2 admin-button"
+                      style={{ 
+                        background: "rgba(249,212,35,0.05)",
+                        border: "1px solid #f9d423",
+                        color: "#f9d423",
+                        borderRadius: "8px",
+                        fontSize: "0.75rem",
+                        letterSpacing: "1px",
+                        padding: "6px 12px",
+                        textTransform: "uppercase",
+                        transition: "all 0.3s ease"
+                      }}>
+                      <i className="fas fa-shield-alt" style={{ fontSize: "0.9rem" }}></i>
+                      Panel Admin
+                    </Link>
+                  </li>
+                )}
+
                 <li className="nav-item">
-                  <Link className="nav-link nav-hover fw-bold" to="/my-posts">
-                    📝 Mis Posts
-                  </Link>
+                  <Link className="nav-link hover-link fw-bold" to="/my-posts">Mis Posts</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link nav-hover fw-bold" to="/my-routes">
-                    🗺️ Mis Rutas
-                  </Link>
+                  <Link className="nav-link hover-link fw-bold" to="/my-routes">Mis Rutas</Link>
                 </li>
-                <li className="nav-item ms-2">
-                  <Link
-                    to="/profile"
-                    className="btn rounded-pill px-4 fw-bold d-flex align-items-center gap-2"
-                    style={{
-                      background: "rgba(0,242,254,0.08)",
-                      border: "1px solid rgba(0,242,254,0.4)",
-                      color: "#00f2fe", fontSize: "0.95rem",
-                      transition: "all 0.3s ease"
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.background = "rgba(0,242,254,0.18)"}
-                    onMouseOut={(e) => e.currentTarget.style.background = "rgba(0,242,254,0.08)"}
-                  >
+                
+                {/* PERFIL USUARIO */}
+                <li className="nav-item ms-lg-2">
+                  <Link to="/profile" className="btn rounded-pill px-4 fw-bold user-profile-btn">
                     🌍 {user?.name || "Viajero"}
                   </Link>
                 </li>
+
+                {/* LOGOUT */}
                 <li className="nav-item">
-                  <button
-                    onClick={handleLogout}
-                    className="btn rounded-pill px-3 btn-sm fw-bold"
-                    style={{
-                      background: "rgba(255,78,80,0.15)",
-                      border: "1px solid rgba(255,78,80,0.4)",
-                      color: "#ff4e50", fontSize: "0.8rem",
-                      transition: "all 0.3s ease"
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.background = "rgba(255,78,80,0.3)"}
-                    onMouseOut={(e) => e.currentTarget.style.background = "rgba(255,78,80,0.15)"}
-                  >
-                    Salir
-                  </button>
+                  <button onClick={handleLogout} className="btn logout-btn btn-sm fw-bold">Salir</button>
                 </li>
               </>
             ) : (
               <>
+                <li className="nav-item"><Link className="nav-link hover-link fw-bold" to="/login">Entrar</Link></li>
                 <li className="nav-item">
-                  <Link className="nav-link nav-hover fw-bold" to="/login">Entrar</Link>
-                </li>
-                <li className="nav-item">
-                  <Link
-                    className="btn rounded-pill px-4 fw-bold text-dark"
-                    style={{
-                      background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
-                      border: "none", fontSize: "0.95rem",
-                      boxShadow: "0 0 15px rgba(249,212,35,0.3)",
-                      transition: "all 0.3s ease"
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
-                    onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
-                    to="/register"
-                  >
-                    ¡Unirme ahora!
-                  </Link>
+                  <Link to="/register" className="btn signup-btn px-4 fw-bold text-dark">¡Unirme ahora!</Link>
                 </li>
               </>
             )}
@@ -152,25 +120,71 @@ const Navbar = () => {
       </div>
 
       <style>{`
-        .nav-hover { color: rgba(255,255,255,0.85) !important; font-size: 0.9rem; letter-spacing: 0.5px; transition: all 0.3s ease; }
-        .nav-hover:hover { color: #00f2fe !important; transform: translateY(-1px); }
+        /* Efectos Hover Generales */
+        .hover-link { 
+            color: rgba(255,255,255,0.7) !important; 
+            font-size: 0.85rem; 
+            transition: 0.3s ease; 
+        }
+        .hover-link:hover { 
+            color: #00d4ff !important; 
+            transform: translateY(-1.5px);
+        }
 
-        /* Responsivo: reducir logo y tamaño de fuente en pantallas pequeñas */
-        @media (max-width: 576px) {
-          .navbar-brand img {
-            width: 64px !important;
-            height: 64px !important;
-          }
-          .navbar-brand span {
-            font-size: 1.25rem !important;
-          }
-          .navbar-brand small {
-            font-size: 0.55rem !important;
-          }
-          .btn.px-4 {
-            padding-left: 12px !important;
-            padding-right: 12px !important;
-          }
+        /* Botón Admin - Hover */
+        .admin-button:hover {
+            background: rgba(249,212,35,0.15) !important;
+            box-shadow: 0 0 15px rgba(249,212,35,0.3);
+            transform: scale(1.02);
+            color: #fff !important;
+            border-color: #fff !important;
+        }
+
+        /* Botón Perfil */
+        .user-profile-btn {
+            background: rgba(0,242,254,0.08);
+            border: 1px solid rgba(0,242,254,0.4);
+            color: #00f2fe;
+            font-size: 0.9rem;
+            transition: 0.3s ease;
+        }
+        .user-profile-btn:hover {
+            background: rgba(0,242,254,0.15);
+            border-color: #00f2fe;
+            box-shadow: 0 0 12px rgba(0,242,254,0.3);
+            color: #fff;
+        }
+
+        /* Logout */
+        .logout-btn {
+            background: transparent;
+            border: 1px solid rgba(255,78,80,0.4);
+            color: #ff4e50;
+            border-radius: 50px;
+            transition: 0.3s ease;
+        }
+        .logout-btn:hover {
+            background: rgba(255,78,80,0.1);
+            border-color: #ff4e50;
+            color: #fff;
+        }
+
+        /* Registro */
+        .signup-btn {
+            background: linear-gradient(135deg, #f9d423 0%, #ff4e50 100%);
+            border-radius: 50px;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 15px rgba(249,212,35,0.2);
+            transition: 0.3s ease;
+        }
+        .signup-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(249,212,35,0.4);
+        }
+
+        @media (max-width: 991px) {
+            .navbar-collapse { margin-top: 15px; padding-bottom: 10px; }
+            .nav-item { margin-bottom: 8px; }
         }
       `}</style>
     </nav>

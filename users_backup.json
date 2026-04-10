@@ -1,0 +1,42 @@
+[
+  {
+    "id": 1,
+    "name": "8",
+    "email": "8@gmail.com",
+    "is_active": true,
+    "background": null,
+    "is_admin": false
+  },
+  {
+    "id": 2,
+    "name": "Fernando Barrera",
+    "email": "ferbarotz23@gmail.com",
+    "is_active": true,
+    "background": null,
+    "is_admin": false
+  },
+  {
+    "id": 3,
+    "name": "1",
+    "email": "1@gmail.com",
+    "is_active": true,
+    "background": null,
+    "is_admin": false
+  },
+  {
+    "id": 4,
+    "name": "Administrador",
+    "email": "ferbarotz@gmail.com",
+    "is_active": true,
+    "background": null,
+    "is_admin": true
+  },
+  {
+    "id": 5,
+    "name": "2",
+    "email": "2@gmail.com",
+    "is_active": true,
+    "background": null,
+    "is_admin": false
+  }
+]

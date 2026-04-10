@@ -3,13 +3,31 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE, authHeaders } from '../api/backend';
 
-const fixImage = (img) => {
-  if (!img) return null;
-  if (typeof img === "string" && img.startsWith("/")) return `${API_BASE}${img}`;
-  return img;
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+const makeAbsoluteUrl = (raw) => {
+  if (!raw) return null;
+  if (typeof raw === 'object') {
+    raw = raw.url || raw.path || raw.file || raw.src || raw.image || raw;
+  }
+  if (typeof raw !== 'string') return null;
+  raw = raw.trim();
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('//')) return `https:${raw}`;
+  const baseCandidate = (API_BASE && API_BASE.length > 0)
+    ? API_BASE.replace(/\/$/, '')
+    : window.location.origin.replace(/\/$/, '');
+  try {
+    return new URL(raw, baseCandidate).href;
+  } catch (err) {
+    return `${baseCandidate}/${raw.replace(/^\/+/, '')}`;
+  }
 };
 
-// ── PLACEHOLDER SIN FOTOS ──
+// -----------------------------------------------------------------------------
+// PLACEHOLDER SIN FOTOS
+// -----------------------------------------------------------------------------
 const NoPhotosCarousel = () => {
   const [idx, setIdx] = useState(0);
 
@@ -82,14 +100,51 @@ const NoPhotosCarousel = () => {
   );
 };
 
-// ── ROUTE CARD ──
+// -----------------------------------------------------------------------------
+// RouteCard
+// -----------------------------------------------------------------------------
 const RouteCard = ({ route, onDelete, onView, onEdit }) => {
   const [currentPhoto, setCurrentPhoto] = useState(0);
 
-  const photos = (route.steps || [])
-    .flatMap(s => (s.images || []).map(img => img.url || img).concat(s.photos || []))
-    .map(fixImage)
-    .filter(Boolean);
+  const gatherImagesFromStep = (s) => {
+    if (!s) return [];
+    let imgs = [];
+    if (Array.isArray(s.images)) imgs = imgs.concat(s.images);
+    if (Array.isArray(s.photos)) imgs = imgs.concat(s.photos);
+    if (Array.isArray(s.photos_urls)) imgs = imgs.concat(s.photos_urls);
+    if (s.image) imgs.push(s.image);
+    if (s.photo) imgs.push(s.photo);
+    if (s.url) imgs.push(s.url);
+    return imgs;
+  };
+
+  // ✅ CAMBIO: deduplicar + limitar a 20 fotos reales
+  const photos = (() => {
+    const raw = [
+      ...(route.images || []),
+      ...(route.photos || []),
+      ...(route.image ? [route.image] : []),
+      ...(route.photo ? [route.photo] : []),
+      ...((route.steps || []).flatMap(gatherImagesFromStep))
+    ]
+      .map(img => {
+        if (img && typeof img === 'object') return img.url || img.path || img.file || img.src || null;
+        return img;
+      })
+      .map(makeAbsoluteUrl)
+      .filter(Boolean);
+
+    // deduplicar manteniendo orden
+    const seen = new Set();
+    const unique = [];
+    for (const u of raw) {
+      if (!seen.has(u)) {
+        seen.add(u);
+        unique.push(u);
+      }
+    }
+    return unique.slice(0, 20); // ✅ máximo 20
+  })();
 
   useEffect(() => {
     if (photos.length <= 1) return;
@@ -113,7 +168,7 @@ const RouteCard = ({ route, onDelete, onView, onEdit }) => {
       onMouseOver={(e) => e.currentTarget.style.border = "1px solid rgba(249,212,35,0.5)"}
       onMouseOut={(e) => e.currentTarget.style.border = "1px solid rgba(255,255,255,0.08)"}
     >
-      {/* ── ÁREA DE FOTO ── */}
+      {/* ÁREA DE FOTO */}
       <div style={{ position: "relative", height: "180px", background: "#1a1a2e", overflow: "hidden" }}>
         {photos.length > 0 ? (
           <>
@@ -153,7 +208,7 @@ const RouteCard = ({ route, onDelete, onView, onEdit }) => {
         }}>📍 {route.destination}</span>
       </div>
 
-      {/* ── CUERPO ── */}
+      {/* CUERPO */}
       <div className="p-3 d-flex flex-column" style={{ flex: 1 }}>
         <div className="d-flex justify-content-between align-items-start mb-2">
           <h5 className="fw-bold mb-0" style={{ color: "#fff", fontSize: "1rem", lineHeight: "1.3" }}>
@@ -203,7 +258,7 @@ const RouteCard = ({ route, onDelete, onView, onEdit }) => {
           )}
         </div>
 
-        {/* ── BOTONES ── */}
+        {/* BOTONES */}
         <div className="d-flex gap-2 mt-auto">
           <button
             onClick={onView}
@@ -216,7 +271,6 @@ const RouteCard = ({ route, onDelete, onView, onEdit }) => {
             🗺️ Ver detalle
           </button>
 
-          {/* ✏️ EDITAR */}
           <button
             onClick={onEdit}
             className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
@@ -230,7 +284,6 @@ const RouteCard = ({ route, onDelete, onView, onEdit }) => {
             ✏️
           </button>
 
-          {/* 🗑️ ELIMINAR */}
           <button
             onClick={onDelete}
             className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
@@ -249,7 +302,9 @@ const RouteCard = ({ route, onDelete, onView, onEdit }) => {
   );
 };
 
-// ── PÁGINA PRINCIPAL ──
+// -----------------------------------------------------------------------------
+// Página MyRoutes
+// -----------------------------------------------------------------------------
 const MyRoutes = () => {
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -270,7 +325,16 @@ const MyRoutes = () => {
           return;
         }
         const data = await res.json();
-        if (mounted) setRoutes(Array.isArray(data) ? data : []);
+
+        const rawRoutes = Array.isArray(data) ? data : (data.routes || data.items || []);
+        const normalizedRoutes = rawRoutes.map(r => {
+          const clone = { ...r };
+          clone.steps = Array.isArray(clone.steps) ? clone.steps : (clone.paradas || clone.stops || []);
+          clone.images = clone.images || clone.photos || clone.photos_urls || [];
+          return clone;
+        });
+
+        if (mounted) setRoutes(normalizedRoutes);
       } catch (err) {
         console.error("Error cargando rutas:", err);
         if (mounted) setRoutes([]);
@@ -306,8 +370,7 @@ const MyRoutes = () => {
 
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh" }}>
-
-      {/* ── HEADER ── */}
+      {/* HEADER */}
       <div className="text-center text-white" style={{
         background: "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)",
         padding: "50px 20px 40px", position: "relative"
@@ -334,15 +397,13 @@ const MyRoutes = () => {
             fontSize: "0.9rem", letterSpacing: "1px",
             boxShadow: "0 0 20px rgba(249, 212, 35, 0.3)", transition: "all 0.3s ease"
           }}
-          onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
-          onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
         >
           + Nueva Ruta
         </button>
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px", background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
       </div>
 
-      {/* ── CONTENIDO ── */}
+      {/* CONTENIDO */}
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
         <div className="d-flex align-items-center mb-4">
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to right, transparent, rgba(0,242,254,0.3))" }} />

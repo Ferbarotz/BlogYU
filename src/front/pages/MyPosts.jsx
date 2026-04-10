@@ -62,6 +62,34 @@ const MyPosts = () => {
     let mounted = true;
     const fetchMyPosts = async () => {
       setLoading(true);
+
+      // función de normalización mínima para imágenes y location (no cambia nada más)
+      const normalizePostImages = (p) => {
+        const clone = { ...p };
+        // Establece images (array) si vienen en distintos formatos
+        if (!clone.images) {
+          if (clone.photos && Array.isArray(clone.photos)) clone.images = clone.photos;
+          else if (clone.image && Array.isArray(clone.image)) clone.images = clone.image;
+          else if (clone.image && typeof clone.image === "string") clone.images = [clone.image];
+          else clone.images = [];
+        }
+        // Normaliza cada URL absoluta
+        clone.images = clone.images.map((img) => {
+          if (!img) return null;
+          const raw = (typeof img === "object") ? (img.url || img.path || img) : img;
+          if (typeof raw === "string" && raw.startsWith("/")) return `${API_BASE}${raw}`;
+          return raw;
+        }).filter(Boolean);
+
+        // También asegúrate de tener clone.image (string) como fallback
+        if (!clone.image && clone.images.length > 0) clone.image = clone.images[0];
+
+        // location unificado (si añadiste el campo en backend)
+        clone.location = clone.location || clone.place || null;
+
+        return clone;
+      };
+
       try {
         const headers = { ...authHeaders() };
         const res = await fetch(`${API_BASE}/api/my-posts`, { headers });
@@ -76,11 +104,15 @@ const MyPosts = () => {
           if (!alt.ok) throw new Error("No se pudo cargar posts");
           const altData = await alt.json();
           if (!mounted) return;
-          setPosts(Array.isArray(altData) ? altData : altData.posts || []);
+          const postsArray = Array.isArray(altData) ? altData : altData.posts || [];
+          const normalized = postsArray.map(normalizePostImages);
+          setPosts(normalized);
         } else {
           const data = await res.json();
           if (!mounted) return;
-          setPosts(Array.isArray(data) ? data : data.posts || []);
+          const postsArray = Array.isArray(data) ? data : data.posts || [];
+          const normalized = postsArray.map(normalizePostImages);
+          setPosts(normalized);
         }
       } catch (err) {
         console.error("Error cargando mis posts:", err);
@@ -228,4 +260,4 @@ const MyPosts = () => {
   );
 };
 
-export default MyPosts; 
+export default MyPosts;

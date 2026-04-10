@@ -1,10 +1,9 @@
-// src/front/components/PostCard.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { API_BASE } from "../api/backend";
 import RegisterPromptModal from "./RegisterPromptModal";
 
-// ── PLACEHOLDER SIN FOTOS ──
+// ── PLACEHOLDER SIN FOTOS (Manteniendo tu lógica original) ──
 const NoPhotosPlaceholder = () => {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
@@ -73,50 +72,41 @@ const NoPhotosPlaceholder = () => {
   );
 };
 
-// Helper para extraer autor sin tocar diseño
+// Helper para extraer autor
 const getAuthor = (p = {}) => {
   const source = p.user || p.author || p.created_by || (p.user_name ? { name: p.user_name } : null) || null;
   const name =
     (source && (source.name || source.username)) ||
-    p.user_name ||
-    p.author_name ||
-    p.username ||
+    p.user_name || p.author_name || p.username ||
     (typeof p.author === "string" ? p.author : null) ||
     "Anónimo";
   const avatar = (source && (source.avatar || source.picture || source.photo)) || p.user_avatar || p.avatar || null;
-  return { name, avatar };
+  const id = (source && (source.id || source._id)) || null;
+  return { name, avatar, id };
 };
 
 // ── POST CARD COMPARTIDA ──
 const PostCard = ({
-  // Props desde Home (legacy)
   title, content, image, images, date, category, onReadMore,
-  // Props desde MyPosts (objeto post completo)
   post,
-  // Acciones opcionales
   onEdit, onDelete, onView,
   showActions = false,
-  showAuthor = true // <-- nueva prop
+  showAuthor = true 
 }) => {
   const [currentPhoto, setCurrentPhoto] = useState(0);
   const [showPrompt, setShowPrompt] = useState(false);
   const navigate = useNavigate();
 
-  // Soporte para ambos modos: objeto "post" o props individuales
-  const _title    = post?.title    ?? title;
-  const _content  = post?.content  ?? content;
-  const _image    = post?.image    ?? image;
-  const _images   = post?.images   ?? images;
-  const _date     = post?.created_at ? new Date(post.created_at).toLocaleDateString() : (date ?? "");
-  const _category = post?.category  ?? category;
+  const _title = post?.title ?? title;
+  const _content = post?.content ?? content;
+  const _image = post?.image ?? image;
+  const _images = post?.images ?? images;
+  const _date = post?.created_at ? new Date(post.created_at).toLocaleDateString() : (date ?? "");
+  const _category = post?.category ?? category;
 
   const normalizeUrl = (url) => {
     if (!url || typeof url !== "string") return null;
     if (url.startsWith("/")) return `${API_BASE}${url}`;
-    if (url.includes("localhost") || url.includes("127.0.0.1")) {
-      const path = url.split(":5000")[1] || url.split(":3001")[1];
-      if (path) return `${API_BASE}${path}`;
-    }
     return url;
   };
 
@@ -150,20 +140,16 @@ const PostCard = ({
 
   const originalReadHandler = onView ?? onReadMore;
 
-  // Nuevo handler: si no hay token mostramos modal, si hay token ejecutamos handler original
   const handleReadMoreClick = () => {
     const token = localStorage.getItem("token");
     if (token) {
-      if (typeof originalReadHandler === "function") {
-        originalReadHandler();
-      }
+      if (typeof originalReadHandler === "function") originalReadHandler();
     } else {
       setShowPrompt(true);
     }
   };
 
-  // Autor (nuevo, mínimo)
-  const { name: authorName, avatar } = getAuthor(post || {});
+  const { name: authorName, avatar, id: authorId } = getAuthor(post || {});
 
   return (
     <>
@@ -210,7 +196,6 @@ const PostCard = ({
             <NoPhotosPlaceholder />
           )}
 
-          {/* Badge categoría */}
           {_category && (
             <span style={{
               position: "absolute", top: "10px", left: "10px",
@@ -237,7 +222,7 @@ const PostCard = ({
             )}
           </div>
 
-          {/* ---- AÑADIDO: autor (manteniendo tu diseño) ---- */}
+          {/* ── MANTENIENDO TU DISEÑO: Autor con Enlace Azul ── */}
           {showAuthor && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
               {avatar ? (
@@ -247,9 +232,18 @@ const PostCard = ({
                   {authorName ? authorName.charAt(0).toUpperCase() : "A"}
                 </div>
               )}
-              <div style={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.85)" }}>
-                <strong style={{ color: "#00f2fe", fontWeight: 800 }}>{authorName}</strong>
-              </div>
+              {/* Estilo ajustado para que sea azul y subrayado */}
+              <Link 
+                to={`/profile/${authorId}`} 
+                style={{ 
+                  color: "#00f2fe", 
+                  fontWeight: "800", 
+                  textDecoration: "underline",
+                  cursor: "pointer"
+                }}
+              >
+                {authorName}
+              </Link>
             </div>
           )}
 

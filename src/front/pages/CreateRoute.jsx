@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getBackendURL from '../utils/backend';
+import { compressImage } from '../utils/imageCompression';
+import UploadProgress from '../components/UploadProgress';
 
 const MAX_PHOTOS_PER_EXP = 10;
 
@@ -15,6 +17,7 @@ const CreateRoute = () => {
   });
   const [experiences, setExperiences] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [uploadProgresses, setUploadProgresses] = useState({}); // key: expIndex, value: percent
 
   const icons = {
     vuelo: '✈️', aeropuerto: '🛫', hotel: '🏨',
@@ -61,26 +64,50 @@ const CreateRoute = () => {
     const BACKEND = getBackendURL();
 
     for (const file of toUpload) {
+      // Comprimir antes de subir
+      const compressedFile = await compressImage(file);
+
       const formData = new FormData();
-      formData.append('file', file);
-      try {
-        const res = await fetch(`${BACKEND}/api/upload-step-image`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-          body: formData
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && data?.url) {
-          const finalUrl = data.url.startsWith('http') ? data.url : `${BACKEND}${data.url}`;
-          copy[index].images = copy[index].images ? [...copy[index].images, finalUrl] : [finalUrl];
-        } else {
-          console.error('Upload error', data);
-          alert(`Error subiendo ${file.name}: ${data?.msg || 'Servidor'}`);
-        }
-      } catch (err) {
-        console.error('Network error uploading', err);
-        alert(`Error de conexión al subir ${file.name}`);
-      }
+      formData.append('file', compressedFile);
+
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${BACKEND}/api/upload-step-image`);
+        xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setUploadProgresses(prev => ({ ...prev, [index]: percent }));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data?.url) {
+                const finalUrl = data.url.startsWith('http') ? data.url : `${BACKEND}${data.url}`;
+                copy[index].images = copy[index].images ? [...copy[index].images, finalUrl] : [finalUrl];
+                setUploadProgresses(prev => ({ ...prev, [index]: 0 }));
+                resolve();
+              } else {
+                reject(new Error('No se recibió URL válida'));
+              }
+            } catch {
+              reject(new Error('Respuesta inválida del servidor'));
+            }
+          } else {
+            reject(new Error(`Error ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Error de red'));
+
+        xhr.send(formData);
+      }).catch(err => {
+        alert(`Error subiendo ${file.name}: ${err.message}`);
+      });
     }
 
     setExperiences(copy);
@@ -296,7 +323,6 @@ const CreateRoute = () => {
 
                 <div className="d-flex align-items-center mb-3">
                   <span style={{ fontSize: '1.6rem', marginRight: '10px' }}>{exp.icon}</span>
-                  {/* Cambio: color naranja para el título del tipo */}
                   <h6 className="mb-0 text-uppercase fw-bold" style={{ color: '#f9d423' }}>
                     {exp.type}
                   </h6>
@@ -408,6 +434,10 @@ const CreateRoute = () => {
                         onChange={(e) => handleFileUpload(index, e)}
                       />
                     </div>
+
+                    {uploadProgresses[index] > 0 && (
+                      <UploadProgress percent={uploadProgresses[index]} label={`Subiendo fotos experiencia #${index + 1}`} />
+                    )}
 
                     {exp.images && exp.images.length > 0 && (
                       <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
