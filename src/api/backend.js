@@ -1,6 +1,23 @@
-// src/front/api/backend.js
-// Forzamos la URL del backend para que el frontend sepa a dónde ir
-const API_BASE = "https://super-duper-engine-7vw7gxv9w9xvfj9j5-5000.app.github.dev";
+import { API_BASE } from '../api/backend';
+// src/api/backend.js
+// Detecta automáticamente la URL del backend según el entorno
+
+export const API_BASE = "http://localhost:5000";
+
+const getBackendURL = () => {
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    // Si estamos en Codespaces, reemplaza el puerto 8080 por 5000
+    if (hostname.includes(".app.github.dev")) {
+      return hostname.replace("-8080.", "-5000.");
+    }
+    // Si estamos en local
+    return "http://localhost:5000";
+  }
+  return "http://localhost:5000";
+};
+
+const API_BASE = `https://${getBackendURL()}`;
 
 export default API_BASE;
 export { API_BASE };
@@ -9,3 +26,5 @@ export function authHeaders() {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+

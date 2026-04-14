@@ -1,7 +1,6 @@
-// src/front/pages/ResetPassword.jsx
 import React, { useState } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import getBackendURL from '../utils/backend';
+import { API_BASE } from '../api/backend';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -13,8 +12,6 @@ export default function ResetPassword() {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  const BACKEND = getBackendURL();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,7 +33,7 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND}/api/reset-password/${encodeURIComponent(token)}`, {
+      const res = await fetch(`${API_BASE}/api/reset-password/${encodeURIComponent(token)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -44,7 +41,6 @@ export default function ResetPassword() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setMessage(data.msg || 'Contraseña actualizada correctamente.');
-        // opcional: redirigir al login después de 2s
         setTimeout(() => navigate('/login'), 2000);
       } else {
         setError(data.msg || 'Error al restablecer la contraseña.');

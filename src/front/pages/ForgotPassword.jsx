@@ -1,7 +1,6 @@
-// src/front/pages/ForgotPassword.jsx
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import getBackendURL from '../utils/backend';
+import { API_BASE } from '../api/backend';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -9,15 +8,13 @@ export default function ForgotPassword() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const BACKEND = getBackendURL();
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
     setError(null);
     try {
-      const res = await fetch(`${BACKEND}/api/forgot-password`, {
+      const res = await fetch(`${API_BASE}/api/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

@@ -1,9 +1,10 @@
 // src/front/components/RouteCard.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { API_BASE } from "../api/backend";
 import RegisterPromptModal from "./RegisterPromptModal";
 
+// Helpers locales
 const makeAbsolute = (url) => {
   if (!url) return null;
   if (typeof url !== "string") return null;
@@ -12,7 +13,8 @@ const makeAbsolute = (url) => {
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith("//")) return `https:${trimmed}`;
   if (trimmed.startsWith("/")) {
-    return (API_BASE ? API_BASE.replace(/\/$/, "") : window.location.origin.replace(/\/$/, "")) + trimmed;
+    const base = (API_BASE && API_BASE !== "") ? API_BASE.replace(/\/$/, "") : window.location.origin.replace(/\/$/, "");
+    return `${base}${trimmed}`;
   }
   try {
     return new URL(trimmed, window.location.origin).href;
@@ -34,38 +36,38 @@ const getAuthor = (r = {}) => {
   const source = r.user || r.author || r.created_by || (r.user_name ? { name: r.user_name } : null) || null;
   const name =
     (source && (source.name || source.username)) ||
-    r.user_name ||
-    r.author_name ||
-    r.username ||
+    r.user_name || r.author_name || r.username ||
     (typeof r.author === "string" ? r.author : null) ||
     "Anónimo";
   const avatar = (source && (source.avatar || source.picture || source.photo)) || r.user_avatar || r.avatar || null;
-  return { name, avatar };
+  const id = (source && (source.id || source._id)) || null;
+  return { name, avatar, id };
 };
 
-const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
+const RouteCard = ({ route = {}, onView, maxPhotos = 6 }) => {
   const [currentPhoto, setCurrentPhoto] = useState(0);
   const [showPrompt, setShowPrompt] = useState(false);
   const navigate = useNavigate();
 
+  // Recolecta imágenes desde distintos campos que tu API puede devolver (sin recortar)
   const collectRawImages = () => {
     const arr = [];
-    if (route.images && Array.isArray(route.images)) arr.push(...route.images);
-    if (route.photos && Array.isArray(route.photos)) arr.push(...route.photos);
+    if (Array.isArray(route.images)) arr.push(...route.images);
+    if (Array.isArray(route.photos)) arr.push(...route.photos);
     if (route.image) arr.push(route.image);
     if (route.photo) arr.push(route.photo);
     (route.steps || []).forEach(s => {
-      if (s.images && Array.isArray(s.images)) arr.push(...s.images);
-      if (s.photos && Array.isArray(s.photos)) arr.push(...s.photos);
-      if (s.media && Array.isArray(s.media)) arr.push(...s.media);
-      if (s.image) arr.push(s.image);
-      if (s.photo) arr.push(s.photo);
+      if (s && Array.isArray(s.images)) arr.push(...s.images);
+      if (s && Array.isArray(s.photos)) arr.push(...s.photos);
+      if (s && s.image) arr.push(s.image);
+      if (s && s.photo) arr.push(s.photo);
+      if (s && Array.isArray(s.media)) arr.push(...s.media);
     });
     return arr;
   };
 
-  // ✅ Deduplicar + limitar
-  const photos = (() => {
+  // Normaliza/extrae y convierte a URLs absolutas, dejando sólo únicas (array completo)
+  const allUniquePhotos = (() => {
     const raw = collectRawImages()
       .map(extractUrl)
       .filter(Boolean)
@@ -79,8 +81,13 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
         unique.push(u);
       }
     }
-    return unique.slice(0, maxPhotos);
+    return unique;
   })();
+
+  const photosCount = allUniquePhotos.length;                 // total real de imágenes
+  const displayMax = Number.isFinite(Number(maxPhotos)) ? Number(maxPhotos) : 6;
+  const photos = allUniquePhotos.slice(0, displayMax);       // las que realmente mostramos en miniaturas
+  const cover = allUniquePhotos.length ? allUniquePhotos[0] : "/placeholder-150.png";
 
   useEffect(() => {
     if (photos.length <= 1) return;
@@ -89,7 +96,7 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
   }, [photos.length]);
 
   const stepIcons = { vuelo: "✈️", hotel: "🏨", restaurante: "🍽️", bar: "🍹", lugar: "📍" };
-  const { name: authorName, avatar } = getAuthor(route || {});
+  const { name: authorName, avatar, id: authorId } = getAuthor(route || {});
 
   const handleViewClick = () => {
     const token = localStorage.getItem("token");
@@ -113,7 +120,6 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
         onMouseOver={(e) => e.currentTarget.style.border = "1px solid rgba(249,212,35,0.5)"}
         onMouseOut={(e) => e.currentTarget.style.border = "1px solid rgba(255,255,255,0.08)"}
       >
-        {/* IMAGEN */}
         <div style={{ height: "180px", background: "#1a1a2e", position: "relative", overflow: "hidden" }}>
           {photos.length > 0 ? (
             <>
@@ -134,16 +140,15 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
                   ))}
                 </div>
               )}
-              {/* ✅ Badge contador de fotos */}
-              {(photos.length > 0 || route.photos_count > 0 || route.images_count > 0) && (
+              {(photosCount > 0 || route.photos_count > 0 || route.images_count > 0) && (
                 <span style={{
                   position: "absolute", top: "10px", right: "10px",
                   background: "rgba(0,0,0,0.6)", color: "#f9d423",
                   fontSize: "0.65rem", padding: "2px 8px", borderRadius: "20px", backdropFilter: "blur(4px)"
                 }}>
-                  📷 {photos.length || route.photos_count || route.images_count}
+                  📷 {photosCount || route.photos_count || route.images_count || 0}
                 </span>
-                )}
+              )}
             </>
           ) : (
             <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
@@ -164,7 +169,6 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "40px", background: "linear-gradient(to top, rgba(13,17,23,0.8), transparent)" }} />
         </div>
 
-        {/* CUERPO */}
         <div className="p-3 d-flex flex-column" style={{ flex: 1 }}>
           <div className="d-flex justify-content-between align-items-start mb-2">
             <h5 className="fw-bold mb-0" style={{ color: "#fff", fontSize: "0.95rem", lineHeight: "1.3" }}>{route.title}</h5>
@@ -173,7 +177,6 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
             </small>
           </div>
 
-          {/* Autor */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             {avatar ? (
               <img src={makeAbsolute(extractUrl(avatar))} alt={authorName} style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(255,255,255,0.06)" }} />
@@ -182,19 +185,24 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
                 {authorName ? authorName.charAt(0).toUpperCase() : "A"}
               </div>
             )}
-            <div style={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.85)" }}>
-              <strong style={{ color: "#f9d423", fontWeight: 800 }}>{authorName}</strong>
-            </div>
+            {authorId ? (
+              <Link
+                to={`/profile/${authorId}`}
+                style={{ color: "#f9d423", fontWeight: 800, textDecoration: "underline", fontSize: "0.82rem" }}
+              >
+                {authorName}
+              </Link>
+            ) : (
+              <strong style={{ color: "#f9d423", fontWeight: 800, fontSize: "0.82rem" }}>{authorName}</strong>
+            )}
           </div>
 
-          {/* Descripción */}
           <p style={{
             color: "rgba(255,255,255,0.5)", fontSize: "0.78rem", lineHeight: "1.4",
             display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
             overflow: "hidden", marginBottom: "8px"
           }}>{route.description || "Sin descripción"}</p>
 
-          {/* Steps tags */}
           {route.steps?.length > 0 && (
             <div className="d-flex flex-wrap gap-1 mb-2">
               {route.steps.slice(0, 2).map((s, i) => (
@@ -210,17 +218,15 @@ const RouteCard = ({ route, onView, maxPhotos = 6 }) => {
             </div>
           )}
 
-          {/* ✅ Conteo de paradas y fotos */}
           <div className="d-flex gap-3 mb-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.72rem" }}>
             {route.steps?.length > 0 && (
               <span>🗂️ {route.steps.length} parada{route.steps.length !== 1 ? "s" : ""}</span>
             )}
-            {photos.length > 0 && (
-              <span>📷 {photos.length} foto{photos.length !== 1 ? "s" : ""}</span>
+            {photosCount > 0 && (
+              <span>📷 {photosCount} foto{photosCount !== 1 ? "s" : ""}</span>
             )}
           </div>
 
-          {/* Botón */}
           <div className="mt-auto">
             <button
               onClick={handleViewClick}

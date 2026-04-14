@@ -5,7 +5,6 @@ import PostCard from "../components/PostCard";
 import RouteCard from "../components/RouteCard";
 import { API_BASE } from "../api/backend";
 
-
 const CATEGORIES = [
   { id: "todos", name: "🌍 Todos" },
   { id: "hoteles", name: "🏨 Hoteles" },
@@ -21,7 +20,6 @@ const Home = () => {
   const [activeCategory, setActiveCategory] = useState("todos");
   const [loading, setLoading] = useState(true);
 
-  // admin/site background
   const [globalHomeBg, setGlobalHomeBg] = useState(null);
   const [adminEditing, setAdminEditing] = useState(false);
   const [previewBg, setPreviewBg] = useState(null);
@@ -35,9 +33,9 @@ const Home = () => {
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "null");
 
-  
+  // ✅ Fix: acepta is_admin, role === "admin" o role === "superuser"
+  const isAdmin = !!(user && (user.is_admin || user.role === "admin" || user.role === "superuser"));
 
-  // Normaliza URLs (resuelve relativas con API_BASE o window.location.origin)
   const normalizeUrl = (url) => {
     if (!url) return null;
     try {
@@ -46,40 +44,44 @@ const Home = () => {
         const base = (API_BASE && API_BASE !== "") ? API_BASE.replace(/\/$/, "") : window.location.origin;
         return `${base}${url}`;
       }
-      const parsed = new URL(url, window.location.origin);
-      return parsed.href;
-    } catch (err) {
+      return new URL(url, window.location.origin).href;
+    } catch {
       return url;
     }
   };
 
-  // ---------------- Hooks (todos antes de cualquier return) ----------------
-
-  // Fetch feed
-  console.log("Home montado — API_BASE:", API_BASE);
+  // ✅ Fetch feed con retry automático
   useEffect(() => {
-    Promise.all([
-      fetch(`${API_BASE}/api/posts`).then(r => (r.ok ? r.json() : [])),
-      fetch(`${API_BASE}/api/routes`).then(r => (r.ok ? r.json() : []))
-    ]).then(([postsData, routesData]) => {
-      const combined = [
-        ...(Array.isArray(postsData) ? postsData : []).map(p => ({ ...p, type: "post" })),
-        ...(Array.isArray(routesData) ? routesData : []).map(r => ({ ...r, type: "route" }))
-      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      setFeed(combined);
-      setLoading(false);
-    }).catch((err) => {
-      console.error("Error fetching feed:", err);
-      setLoading(false);
-    });
+    const fetchFeed = async (retries = 3) => {
+      try {
+        const [postsRes, routesRes] = await Promise.all([
+          fetch(`${API_BASE}/api/posts`),
+          fetch(`${API_BASE}/api/routes`)
+        ]);
+        const postsData = postsRes.ok ? await postsRes.json() : [];
+        const routesData = routesRes.ok ? await routesRes.json() : [];
+        const combined = [
+          ...(Array.isArray(postsData) ? postsData : []).map(p => ({ ...p, type: "post" })),
+          ...(Array.isArray(routesData) ? routesData : []).map(r => ({ ...r, type: "route" }))
+        ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setFeed(combined);
+      } catch (err) {
+        if (retries > 0) {
+          setTimeout(() => fetchFeed(retries - 1), 1500);
+        } else {
+          console.error("Error fetching feed:", err);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFeed();
   }, []);
 
-  // Cargar home background (robusto)
+  // Cargar home background
   useEffect(() => {
     const cached = localStorage.getItem("globalHomeBg");
-    if (cached) {
-      setGlobalHomeBg(cached);
-    }
+    if (cached) setGlobalHomeBg(cached);
 
     const FETCH_HOME_BG_URLS = [
       `${API_BASE}/api/settings/home-background`,
@@ -89,7 +91,6 @@ const Home = () => {
     ];
 
     let cancelled = false;
-
     (async () => {
       for (const url of FETCH_HOME_BG_URLS) {
         try {
@@ -101,7 +102,7 @@ const Home = () => {
             const resolved = typeof bg === "string" ? bg : (bg.url || null);
             if (!cancelled && resolved) {
               setGlobalHomeBg(resolved);
-              try { localStorage.setItem("globalHomeBg", resolved); } catch (e) { /* ignore */ }
+              try { localStorage.setItem("globalHomeBg", resolved); } catch { }
             }
             break;
           }
@@ -114,9 +115,9 @@ const Home = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Exponer función para forzar refresh (útil para consola)
+  // Exponer refresh global
   useEffect(() => {
-    window.refreshGlobalHomeBg = async function () {
+    window.refreshGlobalHomeBg = async () => {
       const urls = [
         `${API_BASE}/api/settings/home-background`,
         `${API_BASE}/api/home-background`,
@@ -133,7 +134,7 @@ const Home = () => {
             const resolved = typeof bg === "string" ? bg : (bg.url || null);
             if (resolved) {
               setGlobalHomeBg(resolved);
-              try { localStorage.setItem("globalHomeBg", resolved); } catch (e) { }
+              try { localStorage.setItem("globalHomeBg", resolved); } catch { }
               return resolved;
             }
           }
@@ -152,7 +153,7 @@ const Home = () => {
     setActiveCategory(categoryParam ? categoryParam.toLowerCase() : "todos");
   }, [location.search]);
 
-  // Filtro
+  // Filtro por categoría
   useEffect(() => {
     if (activeCategory === "todos") {
       setFilteredFeed(feed);
@@ -165,12 +166,11 @@ const Home = () => {
     }
   }, [activeCategory, feed]);
 
-  // Aplicar fondo al body para visitantes no autenticados
+  // Aplicar fondo al body
   useEffect(() => {
     try {
-      const publicFallback = "/admin-bg.jpg";
-      if (!token && (globalHomeBg || publicFallback)) {
-        const bgUrl = normalizeUrl(globalHomeBg || publicFallback);
+      if (!token && globalHomeBg) {
+        const bgUrl = normalizeUrl(globalHomeBg);
         document.body.style.backgroundImage = `url(${bgUrl})`;
         document.body.style.backgroundSize = "cover";
         document.body.style.backgroundPosition = "center";
@@ -181,32 +181,26 @@ const Home = () => {
         document.body.style.backgroundImage = "";
         document.body.style.backgroundColor = "#0d1117";
       }
-    } catch (e) {
-      console.warn("No se pudo aplicar background al body:", e);
-    }
+    } catch { }
   }, [token, globalHomeBg]);
 
-  // Limpieza final: restaurar body background cuando componente desmonta
+  // Limpiar body al desmontar
   useEffect(() => {
     return () => {
-      try { document.body.style.backgroundImage = ""; document.body.style.backgroundColor = ""; } catch (e) { }
+      try {
+        document.body.style.backgroundImage = "";
+        document.body.style.backgroundColor = "";
+      } catch { }
     };
   }, []);
 
-  // Cerrar modal con Esc si está abierto
+  // Cerrar modal con Esc
   useEffect(() => {
     if (!adminEditing) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") {
-        handleCancelEdit();
-      }
-    };
+    const onKey = (e) => { if (e.key === "Escape") handleCancelEdit(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminEditing]);
-
-  // ---------------- Fin hooks ----------------
 
   if (loading) return (
     <div className="d-flex flex-column align-items-center justify-content-center" style={{ minHeight: "60vh", background: "#0d1117" }}>
@@ -217,16 +211,13 @@ const Home = () => {
     </div>
   );
 
-  // ---------------- Lógica de selección de fondo ----------------
   const chosenBgUrl = previewBg || (token ? (user?.background || globalHomeBg) : globalHomeBg);
   const heroBgUrl = chosenBgUrl ? normalizeUrl(chosenBgUrl) : null;
   const heroBackground = heroBgUrl
     ? `linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), url(${heroBgUrl})`
     : "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)";
 
-  const isAdmin = !!(user && (user.role === "admin" || user.is_admin || user.role === "superuser"));
-
-  // ---------------- Admin handlers ----------------
+  // Admin handlers
   const handleSelectFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -250,9 +241,7 @@ const Home = () => {
       document.body.style.backgroundRepeat = "no-repeat";
       document.body.style.backgroundAttachment = "fixed";
       document.body.style.backgroundColor = "#071017";
-    } catch (e) {
-      console.warn("Error aplicando background al body:", e);
-    }
+    } catch { }
   };
 
   const handleUploadHomeBackground = async () => {
@@ -267,14 +256,14 @@ const Home = () => {
       if (selectedFile) {
         const fd = new FormData();
         fd.append("background", selectedFile);
-        // AJUSTE: He cambiado la ruta para que apunte a settings/home_background
         const uploadRes = await fetch(`${API_BASE}/api/admin/settings/home_background`, {
           method: "POST",
           headers: tokenLocal ? { Authorization: `Bearer ${tokenLocal}` } : {},
           body: fd
         });
         const txt = await uploadRes.text();
-        let data = null; try { data = JSON.parse(txt); } catch (e) { data = null; }
+        let data = null;
+        try { data = JSON.parse(txt); } catch { }
         if (!uploadRes.ok) {
           alert("Error subiendo imagen: " + (data?.msg || txt || uploadRes.status));
           setUploadingBg(false);
@@ -282,11 +271,9 @@ const Home = () => {
         }
         const newBg = data?.background || data?.url || txt;
         setGlobalHomeBg(newBg);
-        try { localStorage.setItem("globalHomeBg", newBg); } catch (e) { }
-        // Mostrar cambio inmediatamente (preview + aplicar body)
+        try { localStorage.setItem("globalHomeBg", newBg); } catch { }
         setPreviewBg(newBg);
         applyBodyBackground(newBg);
-        // Limpiar selección local
         fileInputRef.current._selectedFile = null;
         setAdminEditing(false);
         if (window.refreshGlobalHomeBg) window.refreshGlobalHomeBg();
@@ -301,7 +288,8 @@ const Home = () => {
           body: JSON.stringify({ background: imageUrl })
         });
         const txt = await setRes.text();
-        let data = null; try { data = JSON.parse(txt); } catch (e) { data = null; }
+        let data = null;
+        try { data = JSON.parse(txt); } catch { }
         if (!setRes.ok) {
           alert("Error guardando la URL: " + (data?.msg || txt || setRes.status));
           setUploadingBg(false);
@@ -309,11 +297,10 @@ const Home = () => {
         }
         const newBg = data?.background || imageUrl;
         setGlobalHomeBg(newBg);
-        try { localStorage.setItem("globalHomeBg", newBg); } catch (e) { }
-        // Mostrar cambio inmediatamente
+        try { localStorage.setItem("globalHomeBg", newBg); } catch { }
         setPreviewBg(newBg);
         applyBodyBackground(newBg);
-        urlInputRef.current && (urlInputRef.current.value = "");
+        if (urlInputRef.current) urlInputRef.current.value = "";
         setAdminEditing(false);
         if (window.refreshGlobalHomeBg) window.refreshGlobalHomeBg();
         alert("Fondo del Home actualizado (URL).");
@@ -333,9 +320,9 @@ const Home = () => {
     setAdminEditing(false);
   };
 
-  // ---------------- Render ----------------
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh" }}>
+      {/* HERO */}
       <div
         className="text-center text-white"
         style={{
@@ -359,18 +346,11 @@ const Home = () => {
             onClick={() => setAdminEditing(true)}
             className="btn btn-sm"
             style={{
-              position: "absolute",
-              top: 18,
-              right: 18,
-              zIndex: 40,
-              background: "rgba(0,0,0,0.45)",
-              border: "1px solid rgba(255,255,255,0.06)",
-              color: "#00f2fe",
-              padding: "6px 10px",
-              borderRadius: "999px",
+              position: "absolute", top: 18, right: 18, zIndex: 40,
+              background: "rgba(0,0,0,0.45)", border: "1px solid rgba(255,255,255,0.06)",
+              color: "#00f2fe", padding: "6px 10px", borderRadius: "999px",
               backdropFilter: "blur(6px)"
             }}
-            title="Editar fondo del Home"
           >
             ✏️ Editar fondo del sitio
           </button>
@@ -388,8 +368,14 @@ const Home = () => {
               Qué bueno verte de nuevo. ¿Qué hacemos hoy?
             </p>
             <div className="d-flex gap-3 flex-wrap justify-content-center mt-2">
-              <button onClick={() => navigate("/new-post")} className="btn fw-bold rounded-pill shadow-lg" style={{ background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000", padding: "10px 30px" }}>✍️ Crear publicación</button>
-              <button onClick={() => navigate("/create-route")} className="btn fw-bold rounded-pill shadow-lg" style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", border: "none", color: "#000", padding: "10px 30px" }}>🗺️ Crear ruta</button>
+              <button onClick={() => navigate("/new-post")} className="btn fw-bold rounded-pill shadow-lg"
+                style={{ background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000", padding: "10px 30px" }}>
+                ✍️ Crear publicación
+              </button>
+              <button onClick={() => navigate("/create-route")} className="btn fw-bold rounded-pill shadow-lg"
+                style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", border: "none", color: "#000", padding: "10px 30px" }}>
+                🗺️ Crear ruta
+              </button>
             </div>
           </>
         ) : (
@@ -406,7 +392,8 @@ const Home = () => {
             <p className="mb-4" style={{ color: "rgba(255,255,255,0.65)", maxWidth: "450px", fontSize: "0.95rem" }}>
               Encuentra los mejores sitios recomendados por la comunidad viajera.
             </p>
-            <button onClick={() => navigate("/register")} className="btn fw-bold rounded-pill shadow-lg mt-2" style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", border: "none", color: "#000", padding: "10px 30px" }}>
+            <button onClick={() => navigate("/register")} className="btn fw-bold rounded-pill shadow-lg mt-2"
+              style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", border: "none", color: "#000", padding: "10px 30px" }}>
               ¡Únete a la comunidad!
             </button>
           </>
@@ -415,67 +402,27 @@ const Home = () => {
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px", background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
       </div>
 
-      {/* Admin modal */}
+      {/* Modal admin */}
       {adminEditing && (
-        // overlay cierra si haces click fuera del contenido
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
           onClick={handleCancelEdit}
         >
           <div
             style={{ width: "100%", maxWidth: 920, background: "#0b0e12", borderRadius: 12, padding: 18, border: "1px solid rgba(255,255,255,0.04)" }}
-            onClick={(e) => e.stopPropagation() /* evitar cierre al click dentro del modal */}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 style={{ margin: 0, color: "#fff" }}>Editar fondo del Home (solo admin)</h5>
-              <div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  {/* Botón Cancelar */}
-                  <button
-                    className="btn btn-sm"
-                    onClick={handleCancelEdit}
-                    style={{
-                      minWidth: 110,
-                      padding: "6px 12px",
-                      background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
-                      color: "#000",
-                      fontWeight: "700",
-                      border: "none",
-                      borderRadius: 6,
-                      boxShadow: "0 2px 6px rgba(255,78,80,0.25)",
-                      cursor: "pointer",
-                      transition: "transform 0.2s ease",
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"}
-                    onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
-                  >
-                    Cancelar
-                  </button>
-
-                  {/* Botón Guardar */}
-                  <button
-                    className="btn btn-sm"
-                    disabled={uploadingBg}
-                    onClick={handleUploadHomeBackground}
-                    style={{
-                      minWidth: 110,
-                      padding: "6px 12px",
-                      background: "linear-gradient(135deg,#00f2fe,#4facfe)",
-                      color: "#000",
-                      fontWeight: "700",
-                      border: "none",
-                      borderRadius: 6,
-                      boxShadow: "0 2px 6px rgba(0,242,254,0.15)",
-                      cursor: uploadingBg ? "not-allowed" : "pointer",
-                      transition: "transform 0.2s ease",
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"}
-                    onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
-                  >
-                    {uploadingBg ? "Guardando..." : "Guardar"}
-                  </button>
-                </div>
-
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className="btn btn-sm" onClick={handleCancelEdit}
+                  style={{ minWidth: 110, padding: "6px 12px", background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", color: "#000", fontWeight: "700", border: "none", borderRadius: 6 }}>
+                  Cancelar
+                </button>
+                <button className="btn btn-sm" disabled={uploadingBg} onClick={handleUploadHomeBackground}
+                  style={{ minWidth: 110, padding: "6px 12px", background: "linear-gradient(135deg,#00f2fe,#4facfe)", color: "#000", fontWeight: "700", border: "none", borderRadius: 6 }}>
+                  {uploadingBg ? "Guardando..." : "Guardar"}
+                </button>
               </div>
             </div>
 
@@ -488,7 +435,6 @@ const Home = () => {
                 </label>
                 <small style={{ color: "rgba(255,255,255,0.45)" }}>O pega una URL abajo.</small>
               </div>
-
               <div className="col-md-6">
                 <p style={{ color: "rgba(255,255,255,0.7)" }}>Pegar URL de imagen</p>
                 <div className="d-flex gap-2">
@@ -496,11 +442,18 @@ const Home = () => {
                   <button className="btn btn-secondary" onClick={handleSetPreviewFromUrl}>Previsualizar</button>
                 </div>
               </div>
-
               <div className="col-12">
                 <p style={{ color: "rgba(255,255,255,0.7)" }}>Previsualización</p>
-                <div style={{ height: 180, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.04)", background: previewBg ? `url(${previewBg}) center/cover no-repeat` : (globalHomeBg ? `url(${normalizeUrl(globalHomeBg)}) center/cover no-repeat` : "linear-gradient(135deg,#0f2027,#203a43)") }} />
-                <small style={{ color: "rgba(255,255,255,0.45)" }}>Previsualización local — haz click en Guardar para aplicar el cambio globalmente.</small>
+                <div style={{
+                  height: 180, borderRadius: 8, overflow: "hidden",
+                  border: "1px solid rgba(255,255,255,0.04)",
+                  background: previewBg
+                    ? `url(${previewBg}) center/cover no-repeat`
+                    : globalHomeBg
+                      ? `url(${normalizeUrl(globalHomeBg)}) center/cover no-repeat`
+                      : "linear-gradient(135deg,#0f2027,#203a43)"
+                }} />
+                <small style={{ color: "rgba(255,255,255,0.45)" }}>Previsualización local — haz click en Guardar para aplicar globalmente.</small>
               </div>
             </div>
           </div>
@@ -511,8 +464,14 @@ const Home = () => {
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
         <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
           {CATEGORIES.map((cat) => (
-            <button key={cat.id} onClick={() => cat.id === "todos" ? navigate("/") : navigate(`/?category=${cat.id}`)} className="btn rounded-pill px-4 fw-bold"
-              style={activeCategory === cat.id ? { background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000" } : { background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)" }}>
+            <button
+              key={cat.id}
+              onClick={() => cat.id === "todos" ? navigate("/") : navigate(`/?category=${cat.id}`)}
+              className="btn rounded-pill px-4 fw-bold"
+              style={activeCategory === cat.id
+                ? { background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000" }
+                : { background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)" }
+              }>
               {cat.name}
             </button>
           ))}
@@ -529,7 +488,9 @@ const Home = () => {
         <div className="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
           {filteredFeed.length === 0 ? (
             <div className="col-12 text-center py-5">
-              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>No hay publicaciones en "{activeCategory}" todavía.</p>
+              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>
+                No hay publicaciones en "{activeCategory}" todavía.
+              </p>
             </div>
           ) : (
             filteredFeed.map((item) => (
