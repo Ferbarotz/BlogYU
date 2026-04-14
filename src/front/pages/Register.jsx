@@ -1,7 +1,6 @@
-// src/front/pages/Register.jsx
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import getBackendURL from '../utils/backend';
+import { API_BASE } from '../api/backend';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -19,11 +18,10 @@ const Register = () => {
       setMessage("Las contraseñas no coinciden");
       return;
     }
-    const BACKEND = getBackendURL();
     setLoading(true);
     setMessage('');
     try {
-      const response = await fetch(`${BACKEND}/api/register`, {
+      const response = await fetch(`${API_BASE}/api/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password })

@@ -1,7 +1,6 @@
-// src/front/pages/CreateRoute.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import getBackendURL from '../utils/backend';
+import { API_BASE } from '../api/backend';
 import { compressImage } from '../utils/imageCompression';
 import UploadProgress from '../components/UploadProgress';
 
@@ -123,35 +122,34 @@ const CreateRoute = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    const BACKEND = getBackendURL();
+  e.preventDefault();
 
-    if (!routeData.title.trim()) return alert('Título requerido');
-    if (!experiences.length) return alert('Añade al menos una experiencia');
+  if (!routeData.title.trim()) return alert('Título requerido');
+  if (!experiences.length) return alert('Añade al menos una experiencia');
 
-    setLoading(true);
-    try {
-      const res = await fetch(`${BACKEND}/api/routes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ ...routeData, steps: experiences })
-      });
-      if (res.ok) {
-        alert('¡Ruta de viaje publicada con éxito! 🌍');
-        navigate('/my-routes');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(`Error: ${err.msg || 'No se pudo guardar la ruta'}`);
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Error de conexión. Intenta de nuevo.');
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_BASE}/api/routes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ ...routeData, steps: experiences })
+    });
+    if (res.ok) {
+      alert('¡Ruta de viaje publicada con éxito! 🌍');
+      navigate('/my-routes');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(`Error: ${err.msg || 'No se pudo guardar la ruta'}`);
     }
+  } catch (err) {
+    console.error(err);
+    alert('Error de conexión. Intenta de nuevo.');
+  } finally {
+    setLoading(false);
+  }
   };
 
   return (

@@ -1,33 +1,32 @@
-// src/front/pages/EditRoute.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
 
 const STEP_TYPES = [
-  { id: "vuelo",        label: "✈️ Vuelo" },
-  { id: "aeropuerto",   label: "🛬 Aeropuerto" },
-  { id: "hotel",        label: "🏨 Hotel" },
-  { id: "restaurante",  label: "🍽️ Restaurante" },
-  { id: "cafe",         label: "☕ Café" },
-  { id: "lugar",        label: "📍 Lugar" },
-  { id: "transporte",   label: "🚌 Transporte" },
-  { id: "vip",          label: "⭐ VIP" },
-  { id: "otro",         label: "✨ Otro" },
+  { id: "vuelo", label: "✈️ Vuelo" },
+  { id: "aeropuerto", label: "🛬 Aeropuerto" },
+  { id: "hotel", label: "🏨 Hotel" },
+  { id: "restaurante", label: "🍽️ Restaurante" },
+  { id: "cafe", label: "☕ Café" },
+  { id: "lugar", label: "📍 Lugar" },
+  { id: "transporte", label: "🚌 Transporte" },
+  { id: "vip", label: "⭐ VIP" },
+  { id: "otro", label: "✨ Otro" },
 ];
 
 const MAX_PHOTOS = 5;
 
 const emptyStep = () => ({
-  _key:        Math.random().toString(36).slice(2),
-  type:        "lugar",
-  title:       "",
+  _key: Math.random().toString(36).slice(2),
+  type: "lugar",
+  title: "",
   description: "",
-  rating:      5,
-  location:    "",
-  images:      [],      // URLs ya subidas (strings)
-  newFiles:    [],      // File objects pendientes
+  rating: 5,
+  location: "",
+  images: [],      // URLs ya subidas (strings)
+  newFiles: [],      // File objects pendientes
   newPreviews: [],      // base64 previews
-  dragOver:    false,
+  dragOver: false,
 });
 
 const EditRoute = () => {
@@ -35,9 +34,25 @@ const EditRoute = () => {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
-  const [saving,  setSaving]  = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: "", destination: "", start_date: "", budget: "" });
   const [steps, setSteps] = useState([]);
+  const [route, setRoute] = useState(null); // Estado para la ruta completa
+
+  // Estado para almacenar archivos válidos en uploads
+  const [validUploads, setValidUploads] = useState(new Set());
+
+  // ── Obtener lista de archivos válidos en uploads ──
+  useEffect(() => {
+    fetch(`${API_BASE}/api/uploads/list`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.files) {
+          setValidUploads(new Set(data.files));
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   // ── Cargar ruta ──
   useEffect(() => {
@@ -48,20 +63,22 @@ const EditRoute = () => {
         if (!res.ok) throw new Error();
         const data = await res.json();
 
+        setRoute(data); // Guardamos la ruta completa
+
         setForm({
-          title:       data.title       || "",
+          title: data.title || "",
           destination: data.destination || "",
-          start_date:  data.start_date  || "",
-          budget:      data.budget      || "",
+          start_date: data.start_date || "",
+          budget: data.budget || "",
         });
 
         setSteps((data.steps || []).map(s => ({
-          _key:        Math.random().toString(36).slice(2),
-          type:        s.type        || "lugar",
-          title:       s.title       || "",
+          _key: Math.random().toString(36).slice(2),
+          type: s.type || "lugar",
+          title: s.title || "",
           description: s.description || "",
-          rating:      s.rating      || 5,
-          location:    s.location    || "",
+          rating: s.rating || 5,
+          location: s.location || "",
           images: (() => {
             const raw = s.images || [];
             const urls = raw.map(img => {
@@ -78,9 +95,9 @@ const EditRoute = () => {
             });
             return [...new Set(urls)];
           })(),
-          newFiles:    [],
+          newFiles: [],
           newPreviews: [],
-          dragOver:    false,
+          dragOver: false,
         })));
       } catch (err) {
         console.error(err);
@@ -90,6 +107,23 @@ const EditRoute = () => {
     };
     fetchRoute();
   }, [id, navigate]);
+
+  // ── Filtrar imágenes inválidas cuando cargue la ruta y lista uploads ──
+  useEffect(() => {
+    if (!loading && validUploads.size > 0) {
+      setSteps(prevSteps => prevSteps.map(step => {
+        const filteredImages = step.images.filter(url => {
+          try {
+            const filename = url.split('/').pop();
+            return validUploads.has(filename);
+          } catch {
+            return false;
+          }
+        });
+        return { ...step, images: filteredImages };
+      }));
+    }
+  }, [loading, validUploads]);
 
   // ── Helpers steps ──
   const updateStep = (idx, patch) =>
@@ -110,60 +144,81 @@ const EditRoute = () => {
   };
 
   // ── Fotos por step ──
- const addFiles = (idx, files) => {
-  const valid = Array.from(files)
-    .filter(f => f.type.startsWith("image/"));
+  const addFiles = (idx, files) => {
+    const valid = Array.from(files)
+      .filter(f => f.type.startsWith("image/"));
 
-  if (!valid.length) return;
+    if (!valid.length) return;
 
-  // Leer todos como base64 primero, luego actualizar estado UNA sola vez
-  const promises = valid.map(f => new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload = e => resolve({ file: f, preview: e.target.result });
-    reader.readAsDataURL(f);
-  }));
-
-  Promise.all(promises).then(results => {
-    setSteps(prev => prev.map((s, i) => {
-      if (i !== idx) return s;
-      const remaining = MAX_PHOTOS - s.images.length - s.newFiles.length;
-      if (remaining <= 0) return s;
-      const toAdd = results.slice(0, remaining);
-      return {
-        ...s,
-        newFiles:    [...s.newFiles,    ...toAdd.map(r => r.file)],
-        newPreviews: [...s.newPreviews, ...toAdd.map(r => r.preview)],
-      };
+    // Leer todos como base64 primero, luego actualizar estado UNA sola vez
+    const promises = valid.map(f => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve({ file: f, preview: e.target.result });
+      reader.readAsDataURL(f);
     }));
-  });
-};
+
+    Promise.all(promises).then(results => {
+      setSteps(prev => prev.map((s, i) => {
+        if (i !== idx) return s;
+        const remaining = MAX_PHOTOS - s.images.length - s.newFiles.length;
+        if (remaining <= 0) return s;
+        const toAdd = results.slice(0, remaining);
+        return {
+          ...s,
+          newFiles: [...s.newFiles, ...toAdd.map(r => r.file)],
+          newPreviews: [...s.newPreviews, ...toAdd.map(r => r.preview)],
+        };
+      }));
+    });
+  };
 
   const removeExistingImg = (stepIdx, imgIdx) =>
     updateStep(stepIdx, { images: steps[stepIdx].images.filter((_, i) => i !== imgIdx) });
 
   const removeNewImg = (stepIdx, imgIdx) =>
     updateStep(stepIdx, {
-      newFiles:    steps[stepIdx].newFiles.filter((_, i)    => i !== imgIdx),
+      newFiles: steps[stepIdx].newFiles.filter((_, i) => i !== imgIdx),
       newPreviews: steps[stepIdx].newPreviews.filter((_, i) => i !== imgIdx),
     });
 
   // ── Subir fotos nuevas al servidor ──
   const uploadStepImages = async (stepFiles) => {
+    if (stepFiles.length === 0) return [];
     const urls = [];
     for (const file of stepFiles) {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", file); // campo 'file' para backend
       const res = await fetch(`${API_BASE}/api/upload-step-image`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(), // objeto completo con Authorization si hay token
         body: fd,
       });
-      if (res.ok) {
-        const data = await res.json();
-        urls.push(data.url);
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Error upload:", text);
+        throw new Error("Error uploading images");
       }
+      const data = await res.json();
+      urls.push(data.url);
     }
     return urls;
+  };
+
+  // ── Función para refrescar la ruta tras subir imágenes exitosamente ──
+  const handleUploadSuccess = async () => {
+    const r = await fetch(`${API_BASE}/api/routes/${id}`, { headers: authHeaders() });
+    if (r.ok) {
+      const updated = await r.json();
+      setRoute(updated);
+      // Actualiza feed global si existe
+      if (typeof window.refreshFeed === "function") {
+        window.refreshFeed();
+      }
+      // Si tienes setFeed en props o contexto, actualízalo aquí
+      // else if (setFeed) {
+      //   setFeed(prev => prev.map(it => it.id === updated.id ? ({ ...updated, type: 'route' }) : it));
+      // }
+    }
   };
 
   // ── Submit ──
@@ -179,23 +234,33 @@ const EditRoute = () => {
           : [];
 
         stepsPayload.push({
-          type:        step.type,
-          title:       step.title,
+          type: step.type,
+          title: step.title,
           description: step.description,
-          rating:      step.rating,
-          location:    step.location,
-          images: [...new Set([...step.images, ...uploadedUrls])],
+          rating: step.rating,
+          location: step.location,
+          keep_image_urls: step.images,  // imágenes existentes que se conservan
+          new_images: uploadedUrls,      // imágenes nuevas subidas
         });
       }
+
+      const payload = { ...form, steps: stepsPayload };
+      console.log("Payload a enviar en update_route:", payload);
 
       const res = await fetch(`${API_BASE}/api/routes/${id}`, {
         method: "PUT",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, steps: stepsPayload }),
+        body: JSON.stringify(payload),
       });
 
-      if (res.ok) navigate("/my-routes");
-      else alert("Error al guardar los cambios.");
+      if (res.ok) {
+        // Refrescar ruta tras guardar cambios
+        await handleUploadSuccess();
+        navigate("/my-routes");
+      } else {
+        const text = await res.text();
+        alert("Error al guardar los cambios: " + text);
+      }
     } catch (err) {
       console.error(err);
       alert("Error de conexión.");
@@ -218,7 +283,7 @@ const EditRoute = () => {
     letterSpacing: "1px", textTransform: "uppercase",
     marginBottom: "6px", display: "block",
   };
-  const focusOn  = e => e.target.style.border = "1px solid rgba(249,212,35,0.5)";
+  const focusOn = e => e.target.style.border = "1px solid rgba(249,212,35,0.5)";
   const focusOff = e => e.target.style.border = "1px solid rgba(255,255,255,0.1)";
 
   // ── Loading ──
@@ -240,24 +305,32 @@ const EditRoute = () => {
         background: "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)",
         padding: "50px 20px 40px", position: "relative"
       }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "4px",
-          background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)" }} />
-        <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem",
-          textTransform: "uppercase", marginBottom: "8px" }}>
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0, height: "4px",
+          background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)"
+        }} />
+        <p style={{
+          color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem",
+          textTransform: "uppercase", marginBottom: "8px"
+        }}>
           Tu espacio viajero
         </p>
         <h1 className="fw-black mb-2" style={{ fontSize: "2.5rem", letterSpacing: "-1px" }}>
           Editar{" "}
-          <span style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          <span style={{
+            background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
+          }}>
             Ruta
           </span>
         </h1>
         <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.95rem" }}>
           Modifica los detalles y pasos de tu aventura
         </p>
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px",
-          background: "linear-gradient(to right, transparent, #f9d423, transparent)" }} />
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, height: "1px",
+          background: "linear-gradient(to right, transparent, #f9d423, transparent)"
+        }} />
       </div>
 
       <div className="container py-5" style={{ maxWidth: "860px" }}>
@@ -274,8 +347,10 @@ const EditRoute = () => {
         <form onSubmit={handleSubmit}>
 
           {/* ── INFO GENERAL ── */}
-          <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: "20px", padding: "32px", marginBottom: "24px" }}>
+          <div style={{
+            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "20px", padding: "32px", marginBottom: "24px"
+          }}>
             <h5 style={{ color: "#f9d423", marginBottom: "24px", fontWeight: 700 }}>
               🗺️ Información general
             </h5>
@@ -329,9 +404,11 @@ const EditRoute = () => {
             </div>
 
             {steps.length === 0 && (
-              <div style={{ textAlign: "center", padding: "40px",
+              <div style={{
+                textAlign: "center", padding: "40px",
                 background: "rgba(255,255,255,0.02)", border: "2px dashed rgba(255,255,255,0.1)",
-                borderRadius: "16px", color: "rgba(255,255,255,0.3)" }}>
+                borderRadius: "16px", color: "rgba(255,255,255,0.3)"
+              }}>
                 No hay pasos. Haz clic en "+ Añadir paso" para empezar.
               </div>
             )}
@@ -352,22 +429,28 @@ const EditRoute = () => {
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button type="button" onClick={() => moveStep(idx, -1)}
                         disabled={idx === 0}
-                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
+                        style={{
+                          background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
                           color: "#fff", borderRadius: "8px", padding: "4px 10px",
-                          cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1 }}>
+                          cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1
+                        }}>
                         ↑
                       </button>
                       <button type="button" onClick={() => moveStep(idx, 1)}
                         disabled={idx === steps.length - 1}
-                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
+                        style={{
+                          background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
                           color: "#fff", borderRadius: "8px", padding: "4px 10px",
                           cursor: idx === steps.length - 1 ? "not-allowed" : "pointer",
-                          opacity: idx === steps.length - 1 ? 0.3 : 1 }}>
+                          opacity: idx === steps.length - 1 ? 0.3 : 1
+                        }}>
                         ↓
                       </button>
                       <button type="button" onClick={() => removeStep(idx)}
-                        style={{ background: "rgba(220,53,69,0.15)", border: "1px solid rgba(220,53,69,0.3)",
-                          color: "#ff4e50", borderRadius: "8px", padding: "4px 10px", cursor: "pointer" }}>
+                        style={{
+                          background: "rgba(220,53,69,0.15)", border: "1px solid rgba(220,53,69,0.3)",
+                          color: "#ff4e50", borderRadius: "8px", padding: "4px 10px", cursor: "pointer"
+                        }}>
                         ✕
                       </button>
                     </div>
@@ -434,34 +517,44 @@ const EditRoute = () => {
                   <div>
                     <label style={labelStyle}>
                       📸 Fotos{" "}
-                      <span style={{ color: totalPhotos >= MAX_PHOTOS ? "#ff4e50" : "rgba(255,255,255,0.3)",
-                        fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                      <span style={{
+                        color: totalPhotos >= MAX_PHOTOS ? "#ff4e50" : "rgba(255,255,255,0.3)",
+                        fontWeight: 400, textTransform: "none", letterSpacing: 0
+                      }}>
                         ({totalPhotos}/{MAX_PHOTOS})
                       </span>
                     </label>
 
                     {/* Fotos existentes */}
                     {step.images.length > 0 && (
-                      <div style={{ display: "grid",
+                      <div style={{
+                        display: "grid",
                         gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))",
-                        gap: "8px", marginBottom: "12px" }}>
+                        gap: "8px", marginBottom: "12px"
+                      }}>
                         {step.images.map((url, imgIdx) => (
-                          <div key={imgIdx} style={{ position: "relative", borderRadius: "10px",
+                          <div key={imgIdx} style={{
+                            position: "relative", borderRadius: "10px",
                             overflow: "hidden", aspectRatio: "1",
-                            border: imgIdx === 0 ? "2px solid rgba(249,212,35,0.6)" : "2px solid transparent" }}>
+                            border: imgIdx === 0 ? "2px solid rgba(249,212,35,0.6)" : "2px solid transparent"
+                          }}>
                             <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                             {imgIdx === 0 && (
-                              <div style={{ position: "absolute", bottom: "4px", left: "4px",
+                              <div style={{
+                                position: "absolute", bottom: "4px", left: "4px",
                                 background: "rgba(249,212,35,0.9)", color: "#000",
-                                fontSize: "0.55rem", padding: "2px 6px", borderRadius: "8px", fontWeight: 700 }}>
+                                fontSize: "0.55rem", padding: "2px 6px", borderRadius: "8px", fontWeight: 700
+                              }}>
                                 PORTADA
                               </div>
                             )}
                             <button type="button" onClick={() => removeExistingImg(idx, imgIdx)}
-                              style={{ position: "absolute", top: "4px", right: "4px",
+                              style={{
+                                position: "absolute", top: "4px", right: "4px",
                                 background: "rgba(220,53,69,0.85)", border: "none", color: "#fff",
                                 borderRadius: "50%", width: "20px", height: "20px", cursor: "pointer",
-                                fontSize: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                fontSize: "10px", display: "flex", alignItems: "center", justifyContent: "center"
+                              }}>
                               ✕
                             </button>
                           </div>
@@ -493,23 +586,31 @@ const EditRoute = () => {
 
                     {/* Previews nuevas */}
                     {step.newPreviews.length > 0 && (
-                      <div style={{ display: "grid",
-                        gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "8px" }}>
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "8px"
+                      }}>
                         {step.newPreviews.map((src, imgIdx) => (
-                          <div key={imgIdx} style={{ position: "relative", borderRadius: "10px",
+                          <div key={imgIdx} style={{
+                            position: "relative", borderRadius: "10px",
                             overflow: "hidden", aspectRatio: "1",
-                            border: "2px solid rgba(0,242,254,0.4)" }}>
+                            border: "2px solid rgba(0,242,254,0.4)"
+                          }}>
                             <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            <div style={{ position: "absolute", top: "4px", left: "4px",
+                            <div style={{
+                              position: "absolute", top: "4px", left: "4px",
                               background: "rgba(0,242,254,0.85)", color: "#000",
-                              fontSize: "0.55rem", padding: "2px 6px", borderRadius: "8px", fontWeight: 700 }}>
+                              fontSize: "0.55rem", padding: "2px 6px", borderRadius: "8px", fontWeight: 700
+                            }}>
                               NUEVA
                             </div>
                             <button type="button" onClick={() => removeNewImg(idx, imgIdx)}
-                              style={{ position: "absolute", top: "4px", right: "4px",
+                              style={{
+                                position: "absolute", top: "4px", right: "4px",
                                 background: "rgba(220,53,69,0.85)", border: "none", color: "#fff",
                                 borderRadius: "50%", width: "20px", height: "20px", cursor: "pointer",
-                                fontSize: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                fontSize: "10px", display: "flex", alignItems: "center", justifyContent: "center"
+                              }}>
                               ✕
                             </button>
                           </div>
@@ -526,8 +627,10 @@ const EditRoute = () => {
           <div className="d-flex gap-3">
             <button type="button" onClick={() => navigate("/my-routes")} disabled={saving}
               className="btn rounded-pill fw-bold flex-grow-1"
-              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
-                color: "rgba(255,255,255,0.7)", padding: "14px" }}>
+              style={{
+                background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
+                color: "rgba(255,255,255,0.7)", padding: "14px"
+              }}>
               ← Cancelar
             </button>
             <button type="submit" disabled={saving}
@@ -554,4 +657,4 @@ const EditRoute = () => {
   );
 };
 
-export default EditRoute; 
+export default EditRoute;

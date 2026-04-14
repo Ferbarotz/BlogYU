@@ -189,6 +189,11 @@ def uploads(filename):
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     return send_from_directory(uploads_dir, filename)
 
+@api.route('/api/uploads/<filename>')
+def uploaded_file(filename):
+    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
+    return send_from_directory(uploads_dir, filename)
+
 # ----------------- POSTS -----------------
 @api.route('/upload-step-image', methods=['POST'])
 @jwt_required()
@@ -205,9 +210,16 @@ def upload_step_image():
     filename = f"step_{int(time())}_{filename}"
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     os.makedirs(uploads_dir, exist_ok=True)
-    file.save(os.path.join(uploads_dir, filename))
+    save_path = os.path.join(uploads_dir, filename)
+    try:
+        file.save(save_path)
+        current_app.logger.info(f"Imagen subida y guardada: {save_path}")
+    except Exception as ex:
+        current_app.logger.exception("Error guardando archivo")
+        return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
 
     file_url = f"/api/uploads/{filename}"
+    current_app.logger.info(f"URL devuelta para imagen: {file_url}")
     return jsonify({"url": file_url}), 200
 
 @api.route('/posts', methods=['GET'])
@@ -742,11 +754,24 @@ def update_route(route_id):
 
     new_steps = body.get("steps")
     if new_steps is not None:
+        allowed_types = {"vuelo","aeropuerto","vip","hotel","restaurante","cafe","lugar","transporte","otro"}
+
+        # Obtener pasos actuales de la ruta
+        current_steps = RouteStep.query.filter_by(route_id=route.id).all()
+        current_steps_map = {step.id: step for step in current_steps}
+
+        # Para identificar qué pasos conservar y cuáles eliminar
+        # Asumimos que los pasos nuevos no tienen id, así que eliminamos todos los pasos antiguos y creamos nuevos
+        # Si quieres manejar edición de pasos con IDs, habría que modificar el frontend para enviar IDs
+
+        # Por simplicidad, eliminamos pasos e imágenes que no estén en el nuevo payload
+        # Primero, eliminamos todos los pasos e imágenes antiguos
+        old_step_ids = [step.id for step in current_steps]
+        RouteStepImage.query.filter(RouteStepImage.step_id.in_(old_step_ids)).delete(synchronize_session=False)
         RouteStep.query.filter_by(route_id=route.id).delete()
         db.session.flush()
 
-        allowed_types = {"vuelo","aeropuerto","vip","hotel","restaurante","cafe","lugar","transporte","otro"}
-
+        # Ahora creamos los pasos nuevos con sus imágenes
         for i, s in enumerate(new_steps):
             step_type = (s.get("type") or "").strip().lower()
             step_title = (s.get("title") or "").strip()
@@ -771,10 +796,16 @@ def update_route(route_id):
             db.session.add(step)
             db.session.flush()
 
-            for img_url in (s.get("images") or []):
-                if img_url:
-                    
-                    db.session.add(RouteStepImage(url=img_url, step_id=step.id))
+            keep_urls = s.get("keep_image_urls") or []
+            new_urls = s.get("new_images") or []
+
+            for url in keep_urls:
+                if url:
+                    db.session.add(RouteStepImage(url=url, step_id=step.id))
+
+            for url in new_urls:
+                if url:
+                    db.session.add(RouteStepImage(url=url, step_id=step.id))
 
     db.session.commit()
     return jsonify({"msg": "Ruta actualizada", "route": route.serialize()}), 200
@@ -905,14 +936,42 @@ def admin_update_user(user_id):
     db.session.commit()
     return jsonify(user.serialize()), 200
 
+
+
 @api.route('/users/<int:user_id>/public', methods=['GET'])
 def get_user_public(user_id):
-    """Perfil público — no requiere autenticación."""
     user = User.query.get_or_404(user_id)
+
+    # Construir social desde columnas separadas o campo JSON
+    social = {}
+    if hasattr(user, 'social') and isinstance(getattr(user, 'social'), dict):
+        social = user.social or {}
+    else:
+        for key in ['twitter', 'instagram', 'tiktok', 'facebook', 'website']:
+            val = getattr(user, f'social_{key}', None) or getattr(user, key, None)
+            if val:
+                social[key] = val
+
     return jsonify({
         "id": user.id,
         "name": getattr(user, "name", None),
         "profile_pic": getattr(user, "profile_pic", None),
         "background": getattr(user, "background", None),
-        # NO incluir email ni datos sensibles
+        "profileShape": getattr(user, "profile_shape", None) or getattr(user, "profileShape", None),
+        "social": social,
     }), 200
+
+  
+
+import os
+from flask import current_app, jsonify
+
+@api.route('/api/uploads/list', methods=['GET'])
+def list_uploads():
+    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
+    try:
+        files = os.listdir(uploads_dir)
+        image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.heic', '.avif'))]
+        return jsonify({"files": image_files}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

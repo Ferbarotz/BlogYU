@@ -36,7 +36,11 @@ export default function AdminDashboard() {
   const [globalRoutesPage, setGlobalRoutesPage] = useState(1);
 
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const user = (() => {
+    const raw = localStorage.getItem("user");
+    if (!raw || raw === "undefined" || raw === "null") return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  })();
 
   // Estado del modal de confirmación
   const [confirmModal, setConfirmModal] = useState({
@@ -48,14 +52,22 @@ export default function AdminDashboard() {
   // datos del ítem pendiente (tipo + id) para referencia si es necesario
   const [pendingDelete, setPendingDelete] = useState({ type: null, id: null });
 
-  useEffect(() => {
-    if (!user?.is_admin) {
-      navigate("/");
-      return;
-    }
-    fetchAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+ // Y reemplaza la condición del useEffect:
+useEffect(() => {
+  const isAdmin = !!(
+    user && (
+      user.is_admin === true ||
+      user.is_admin === "true" ||
+      user.role === "admin" ||
+      user.role === "superuser"
+    )
+  );
+  if (!isAdmin) {
+    navigate("/");
+    return;
+  }
+  fetchAll();
+}, []);
 
   // Reset de páginas cuando cambian los buscadores o pestaña
   useEffect(() => setUsersPage(1), [searchTerm, activeTab]);

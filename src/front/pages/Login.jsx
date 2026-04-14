@@ -1,22 +1,21 @@
-// src/front/pages/Login.jsx
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import getBackendURL from '../utils/backend';
+import { Link, useNavigate } from 'react-router-dom';
+import { API_BASE } from '../api/backend';
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const navigate = useNavigate();
 
   const handleChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const BACKEND = getBackendURL();
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND}/api/login`, {
+      const res = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -25,7 +24,8 @@ const Login = () => {
       if (res.ok) {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
-        window.location.href = "/";
+        window.dispatchEvent(new Event("authChange"));
+        navigate("/");
       } else {
         setMessage('Error: ' + (data.msg || 'Credenciales incorrectas'));
       }
@@ -50,7 +50,7 @@ const Login = () => {
 
       <div style={{ width: "100%", maxWidth: "440px", position: "relative" }}>
 
-        {/* ── LOGO / TÍTULO ── */}
+        {/* LOGO / TÍTULO */}
         <div className="text-center mb-4">
           <Link to="/" style={{ textDecoration: "none" }}>
             <h2 className="fw-black mb-0" style={{ fontSize: "2.2rem", letterSpacing: "-1px", color: "#fff" }}>
@@ -58,9 +58,7 @@ const Login = () => {
               <span style={{
                 background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
                 WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
-              }}>
-                YU
-              </span>
+              }}>YU</span>
             </h2>
             <p style={{ color: "#f9d423", letterSpacing: "4px", fontSize: "0.65rem", textTransform: "uppercase", marginTop: "2px" }}>
               Comunidad Viajera
@@ -68,7 +66,7 @@ const Login = () => {
           </Link>
         </div>
 
-        {/* ── CARD ── */}
+        {/* CARD */}
         <div style={{
           background: "rgba(255,255,255,0.03)",
           border: "1px solid rgba(255,255,255,0.08)",
@@ -77,11 +75,7 @@ const Login = () => {
           boxShadow: "0 25px 50px rgba(0,0,0,0.5)"
         }}>
 
-          {/* Línea decorativa superior */}
-          <div style={{
-            height: "4px",
-            background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)"
-          }} />
+          <div style={{ height: "4px", background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)" }} />
 
           <div className="p-4 p-md-5">
 
@@ -109,9 +103,7 @@ const Login = () => {
                     background: "rgba(255,255,255,0.05)",
                     border: "1px solid rgba(255,255,255,0.1)",
                     color: "rgba(255,255,255,0.5)"
-                  }}>
-                    📧
-                  </span>
+                  }}>📧</span>
                   <input
                     name="email"
                     type="email"
@@ -145,9 +137,7 @@ const Login = () => {
                     background: "rgba(255,255,255,0.05)",
                     border: "1px solid rgba(255,255,255,0.1)",
                     color: "rgba(255,255,255,0.5)"
-                  }}>
-                    🔒
-                  </span>
+                  }}>🔒</span>
                   <input
                     name="password"
                     type={showPassword ? "text" : "password"}
@@ -180,9 +170,7 @@ const Login = () => {
                       padding: "0 14px",
                       cursor: "pointer"
                     }}
-                  >
-                    {showPassword ? "🙈" : "👁️"}
-                  </button>
+                  >{showPassword ? "🙈" : "👁️"}</button>
                 </div>
               </div>
 
@@ -203,13 +191,11 @@ const Login = () => {
                 disabled={loading}
                 className="btn w-100 fw-bold"
                 style={{
-                  background: loading
-                    ? "rgba(255,255,255,0.1)"
-                    : "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                  background: loading ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
                   border: "none", color: "#000",
                   padding: "12px", fontSize: "0.95rem",
                   borderRadius: "10px", letterSpacing: "1px",
-                  boxShadow: "0 0 20px rgba(0, 242, 254, 0.3)",
+                  boxShadow: "0 0 20px rgba(0,242,254,0.3)",
                   transition: "all 0.3s ease"
                 }}
                 onMouseOver={(e) => !loading && (e.currentTarget.style.transform = "scale(1.02)")}
@@ -217,26 +203,22 @@ const Login = () => {
               >
                 {loading ? (
                   <><span className="spinner-border spinner-border-sm me-2"></span>Entrando...</>
-                ) : (
-                  "🔑 Iniciar Sesión"
-                )}
+                ) : "🔑 Iniciar Sesión"}
               </button>
 
               <p className="text-center mt-3">
-                <a href="/forgot-password" style={{ color: '#4facfe', textDecoration: 'underline' }}>
+                <Link to="/forgot-password" style={{ color: '#4facfe', textDecoration: 'underline' }}>
                   ¿Olvidaste tu contraseña?
-                </a>
+                </Link>
               </p>
             </form>
 
-            {/* SEPARADOR */}
             <div className="d-flex align-items-center my-4">
               <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
               <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.75rem", margin: "0 12px" }}>¿Nuevo aquí?</span>
               <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
             </div>
 
-            {/* LINK REGISTRO */}
             <Link
               to="/register"
               className="btn w-100 fw-bold"
@@ -262,26 +244,25 @@ const Login = () => {
           </div>
         </div>
 
-        {/* FOOTER */}
         <p className="text-center mt-4" style={{ color: "rgba(255,255,255,0.2)", fontSize: "0.75rem" }}>
           BlogYU · Comunidad Viajera
         </p>
       </div>
 
       <style>{`
-  body { background: #0d1117 !important; }
-  input::placeholder { color: rgba(255,255,255,0.25) !important; }
-  input:-webkit-autofill,
-  input:-webkit-autofill:hover,
-  input:-webkit-autofill:focus,
-  input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 1000px #1a1f2e inset !important;
-    -webkit-text-fill-color: #ffffff !important;
-    background-color: #1a1f2e !important;
-    caret-color: #ffffff !important;
-    transition: background-color 5000s ease-in-out 0s !important;
-  }
-`}</style>
+        body { background: #0d1117 !important; }
+        input::placeholder { color: rgba(255,255,255,0.25) !important; }
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active {
+          -webkit-box-shadow: 0 0 0 1000px #1a1f2e inset !important;
+          -webkit-text-fill-color: #ffffff !important;
+          background-color: #1a1f2e !important;
+          caret-color: #ffffff !important;
+          transition: background-color 5000s ease-in-out 0s !important;
+        }
+      `}</style>
     </div>
   );
 };

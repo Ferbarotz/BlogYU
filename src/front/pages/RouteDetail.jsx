@@ -1,26 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import getBackendURL from '../utils/backend';
-
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import 'leaflet/dist/leaflet.css';
 
+import { API_BASE } from "../api/backend";
+
 const TYPE_CONFIG = {
-  vuelo:       { icon: '✈️', label: 'Vuelo',       colorStart: '#f9d423', colorEnd: '#ff6b35' },
-  aeropuerto:  { icon: '🛫', label: 'Aeropuerto',  colorStart: '#f9d423', colorEnd: '#ff6b35' },
-  vip:         { icon: '💎', label: 'VIP Lounge',  colorStart: '#f9d423', colorEnd: '#ff6b35' },
-  hotel:       { icon: '🏨', label: 'Hotel',       colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  vuelo: { icon: '✈️', label: 'Vuelo', colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  aeropuerto: { icon: '🛫', label: 'Aeropuerto', colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  vip: { icon: '💎', label: 'VIP Lounge', colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  hotel: { icon: '🏨', label: 'Hotel', colorStart: '#f9d423', colorEnd: '#ff6b35' },
   restaurante: { icon: '🍽️', label: 'Restaurante', colorStart: '#f9d423', colorEnd: '#ff6b35' },
-  cafe:        { icon: '☕', label: 'Café',        colorStart: '#f9d423', colorEnd: '#ff6b35' },
-  lugar:       { icon: '🗺️', label: 'Lugar',       colorStart: '#f9d423', colorEnd: '#ff6b35' },
-  transporte:  { icon: '🚖', label: 'Transporte',  colorStart: '#f9d423', colorEnd: '#ff6b35' },
-  otro:        { icon: '📍', label: 'Otro',        colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  cafe: { icon: '☕', label: 'Café', colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  lugar: { icon: '🗺️', label: 'Lugar', colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  transporte: { icon: '🚖', label: 'Transporte', colorStart: '#f9d423', colorEnd: '#ff6b35' },
+  otro: { icon: '📍', label: 'Otro', colorStart: '#f9d423', colorEnd: '#ff6b35' },
 };
 
 const Stars = ({ rating = 0 }) => (
   <span>
-    {[1,2,3,4,5].map(i => (
-      <span key={i} style={{ color: i <= rating ? 'url(#grad)' : 'rgba(255,255,255,0.2)', fontSize: '0.9rem' }}>★</span>
+    {[1, 2, 3, 4, 5].map(i => (
+      <span key={i} style={{ color: i <= rating ? '#f9d423' : 'rgba(255,255,255,0.2)', fontSize: '0.9rem' }}>★</span>
     ))}
   </span>
 );
@@ -43,6 +43,23 @@ const fixImage = (img) => {
     return null;
   }
   return null;
+};
+
+const makeAbsolute = (url) => {
+  if (!url) return null;
+  if (typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("//")) return `https:${trimmed}`;
+  if (trimmed.startsWith("/")) {
+    return (API_BASE ? API_BASE.replace(/\/$/, "") : window.location.origin.replace(/\/$/, "")) + trimmed;
+  }
+  try {
+    return new URL(trimmed, window.location.origin).href;
+  } catch (e) {
+    return trimmed;
+  }
 };
 
 const FitBounds = ({ points = [] }) => {
@@ -73,9 +90,8 @@ const RouteDetail = () => {
 
   useEffect(() => {
     const fetchRoute = async () => {
-      const BACKEND = getBackendURL();
       try {
-        const res = await fetch(`${BACKEND}/api/routes/${id}`);
+        const res = await fetch(`${API_BASE}/api/routes/${id}`);
         if (!res.ok) throw new Error('Ruta no encontrada');
         const data = await res.json();
         setRoute(data);
@@ -91,7 +107,7 @@ const RouteDetail = () => {
   if (loading) return (
     <div className="d-flex justify-content-center align-items-center" style={{ minHeight: "100vh", background: "#0d1117" }}>
       <div className="text-center">
-        <div className="spinner-border mb-3" style={{ color: "url(#grad)", width: "3rem", height: "3rem" }}></div>
+        <div className="spinner-border mb-3" style={{ color: "#f9d423", width: "3rem", height: "3rem" }}></div>
         <p style={{ color: "#f9d423" }}>Cargando ruta...</p>
       </div>
     </div>
@@ -126,6 +142,29 @@ const RouteDetail = () => {
   const prevPhoto = (e) => { e.stopPropagation(); setModalImgIndex(i => (i === 0 ? modalPhotos.length - 1 : i - 1)); };
   const nextPhoto = (e) => { e.stopPropagation(); setModalImgIndex(i => (i === modalPhotos.length - 1 ? 0 : i + 1)); };
 
+  // Recopilar imágenes de la ruta (sin utilitarios externos)
+  const imgs = (() => {
+    const arr = [];
+    if (Array.isArray(route.images)) arr.push(...route.images);
+    if (Array.isArray(route.photos)) arr.push(...route.photos);
+    if (route.image) arr.push(route.image);
+    if (route.photo) arr.push(route.photo);
+    (route.steps || []).forEach(s => {
+      if (s && Array.isArray(s.images)) arr.push(...s.images);
+      if (s && Array.isArray(s.photos)) arr.push(...s.photos);
+      if (s && s.image) arr.push(s.image);
+      if (s && s.photo) arr.push(s.photo);
+    });
+    const normalized = arr.map(fixImage).filter(Boolean).map(makeAbsolute);
+    const seen = new Set();
+    const unique = [];
+    for (const u of normalized) {
+      if (!u) continue;
+      if (!seen.has(u)) { seen.add(u); unique.push(u); }
+    }
+    return unique;
+  })();
+
   return (
     <>
       <svg style={{ height: 0 }}>
@@ -137,11 +176,19 @@ const RouteDetail = () => {
         </defs>
       </svg>
 
-      <div style={{ minHeight: "100vh", background: "#0d1117", color: "#e0e0e0" }} className="py-5">
-        <div className="container" style={{ maxWidth: "900px" }}>
+      <div style={{
+        margin: 0,
+        paddingTop: '10px',
+        paddingLeft: '1rem',
+        paddingRight: '1rem',
+        background: "#0d1117",
+        color: "#e0e0e0",
+        minHeight: "auto",
+      }}>
+        <div className="route-detail-container container" style={{ marginTop: 0, paddingTop: 0 }}>
           <button
             onClick={() => navigate('/my-routes')}
-            style={{ background: "transparent", border: "none", color: "#f9d423", cursor: "pointer", marginBottom: "24px", fontSize: "0.9rem" }}
+            style={{ background: "transparent", border: "none", color: "#f9d423", cursor: "pointer", margin: 0, padding: 0, fontSize: "0.9rem" }}
           >
             ← Volver a mis rutas
           </button>
@@ -150,7 +197,7 @@ const RouteDetail = () => {
           <div className="p-4 mb-4" style={{ background: "#121026", borderRadius: "20px", border: "1px solid #f9d42388", boxShadow: "0 0 15px #f9d42333" }}>
             <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
               <div>
-                <h2 className="fw-black mb-2" style={{ color: "#f9d423", fontSize: "2rem" }}>
+                <h2 className="fw-black mb-2" style={{ color: "#f9d423", fontSize: "2rem", marginTop: 0 }}>
                   {route.title || 'Ruta'}
                 </h2>
                 <div className="d-flex flex-wrap gap-3" style={{ color: "#b0b0b0", fontSize: "0.9rem" }}>
@@ -183,24 +230,27 @@ const RouteDetail = () => {
             )}
           </div>
 
-          {/* RESUMEN STEPS */}
-          {route.steps && route.steps.length > 0 && (
-            <div className="mb-4 p-3" style={{ background: "#121026", borderRadius: "15px", border: "1px solid #f9d42344", boxShadow: "0 0 10px #f9d42322" }}>
-              <p style={{ color: "#f9d423", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "12px" }}>
-                Resumen del viaje — {route.steps.length} experiencia{route.steps.length !== 1 ? 's' : ''}
-              </p>
-              <div className="d-flex flex-wrap gap-2">
-                {route.steps.map((step, i) => {
-                  const cfg = TYPE_CONFIG[step.type] || TYPE_CONFIG.otro;
-                  return (
-                    <span key={i} className="px-3 py-1 rounded-pill" style={{ background: `linear-gradient(135deg, ${cfg.colorStart}33, ${cfg.colorEnd}33)`, color: cfg.colorStart, border: `1px solid ${cfg.colorStart}55`, fontSize: "0.8rem", textTransform: "none" }}>
-                      {cfg.icon} {step.title}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* GALERÍA DE IMÁGENES */}
+          <div className="d-flex flex-wrap gap-2 mb-4">
+            {imgs.length === 0 ? (
+              <div style={{ color: "#f9d423", fontStyle: "italic" }}>No hay imágenes disponibles</div>
+            ) : (
+              imgs.map((src, i) => (
+                <img
+                  key={i}
+                  src={src}
+                  alt={`Foto ${i + 1}`}
+                  style={{ width: 150, height: 150, objectFit: "cover", borderRadius: 12, cursor: "pointer" }}
+                  onError={(e) => { e.target.src = "https://placehold.co/150?text=Sin+imagen"; }}
+                  onClick={() => {
+                    setModalPhotos(imgs);
+                    setModalImgIndex(i);
+                    setModalOpen(true);
+                  }}
+                />
+              ))
+            )}
+          </div>
 
           {/* MAPA */}
           {mapCenter ? (
@@ -245,7 +295,7 @@ const RouteDetail = () => {
                 step.photo ? [step.photo] : [],
               ].flat();
 
-              const normalized = rawImgs.map(fixImage).filter(Boolean);
+              const normalized = rawImgs.map(fixImage).filter(Boolean).map(makeAbsolute);
 
               const seen = new Set();
               const photos = normalized.filter(url => {

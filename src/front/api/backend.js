@@ -1,4 +1,3 @@
-// src/front/api/backend.js
 /**
  * Devuelve la URL base del backend.
  * Prioridad:
