@@ -33,7 +33,6 @@ const Home = () => {
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "null");
 
-  // ✅ Fix: acepta is_admin, role === "admin" o role === "superuser"
   const isAdmin = !!(user && (user.is_admin || user.role === "admin" || user.role === "superuser"));
 
   const normalizeUrl = (url) => {
@@ -41,7 +40,7 @@ const Home = () => {
     try {
       if (/^https?:\/\//i.test(url)) return url;
       if (url.startsWith("/")) {
-        const base = (API_BASE && API_BASE !== "") ? API_BASE.replace(/\/$/, "") : window.location.origin;
+        const base = API_BASE && API_BASE !== "" ? API_BASE.replace(/\/$/, "") : window.location.origin;
         return `${base}${url}`;
       }
       return new URL(url, window.location.origin).href;
@@ -50,7 +49,6 @@ const Home = () => {
     }
   };
 
-  // ✅ Fetch feed con retry automático
   useEffect(() => {
     const fetchFeed = async (retries = 3) => {
       try {
@@ -58,27 +56,30 @@ const Home = () => {
           fetch(`${API_BASE}/api/posts`),
           fetch(`${API_BASE}/api/routes`)
         ]);
+
         const postsData = postsRes.ok ? await postsRes.json() : [];
         const routesData = routesRes.ok ? await routesRes.json() : [];
+
         const combined = [
-          ...(Array.isArray(postsData) ? postsData : []).map(p => ({ ...p, type: "post" })),
-          ...(Array.isArray(routesData) ? routesData : []).map(r => ({ ...r, type: "route" }))
+          ...(Array.isArray(postsData) ? postsData : []).map((p) => ({ ...p, type: "post" })),
+          ...(Array.isArray(routesData) ? routesData : []).map((r) => ({ ...r, type: "route" }))
         ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
         setFeed(combined);
+        setLoading(false);
       } catch (err) {
         if (retries > 0) {
-          setTimeout(() => fetchFeed(retries - 1), 1500);
+          setTimeout(() => fetchFeed(retries - 1), 2000);
         } else {
           console.error("Error fetching feed:", err);
+          setLoading(false);
         }
-      } finally {
-        setLoading(false);
       }
     };
+
     fetchFeed();
   }, []);
 
-  // Cargar home background
   useEffect(() => {
     const cached = localStorage.getItem("globalHomeBg");
     if (cached) setGlobalHomeBg(cached);
@@ -91,6 +92,7 @@ const Home = () => {
     ];
 
     let cancelled = false;
+
     (async () => {
       for (const url of FETCH_HOME_BG_URLS) {
         try {
@@ -98,11 +100,14 @@ const Home = () => {
           if (!res.ok) continue;
           const data = await res.json();
           const bg = data?.background || data?.home_background || data?.value || data?.url || data;
+
           if (bg) {
             const resolved = typeof bg === "string" ? bg : (bg.url || null);
             if (!cancelled && resolved) {
               setGlobalHomeBg(resolved);
-              try { localStorage.setItem("globalHomeBg", resolved); } catch { }
+              try {
+                localStorage.setItem("globalHomeBg", resolved);
+              } catch {}
             }
             break;
           }
@@ -112,10 +117,11 @@ const Home = () => {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Exponer refresh global
   useEffect(() => {
     window.refreshGlobalHomeBg = async () => {
       const urls = [
@@ -124,6 +130,7 @@ const Home = () => {
         `${API_BASE}/api/settings/site/home_background`,
         `${API_BASE}/api/public/home-background`,
       ];
+
       for (const url of urls) {
         try {
           const res = await fetch(url);
@@ -134,7 +141,9 @@ const Home = () => {
             const resolved = typeof bg === "string" ? bg : (bg.url || null);
             if (resolved) {
               setGlobalHomeBg(resolved);
-              try { localStorage.setItem("globalHomeBg", resolved); } catch { }
+              try {
+                localStorage.setItem("globalHomeBg", resolved);
+              } catch {}
               return resolved;
             }
           }
@@ -142,31 +151,31 @@ const Home = () => {
           console.warn("[Home.refresh] error", e);
         }
       }
+
       return null;
     };
   }, []);
 
-  // Categoría desde URL
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const categoryParam = params.get("category");
     setActiveCategory(categoryParam ? categoryParam.toLowerCase() : "todos");
   }, [location.search]);
 
-  // Filtro por categoría
   useEffect(() => {
     if (activeCategory === "todos") {
       setFilteredFeed(feed);
     } else {
-      setFilteredFeed(feed.filter(item => {
-        if (item.type === "route") return false;
-        const cat = item.category ? item.category.toString().toLowerCase() : "";
-        return cat === activeCategory;
-      }));
+      setFilteredFeed(
+        feed.filter((item) => {
+          if (item.type === "route") return false;
+          const cat = item.category ? item.category.toString().toLowerCase() : "";
+          return cat === activeCategory;
+        })
+      );
     }
   }, [activeCategory, feed]);
 
-  // Aplicar fondo al body
   useEffect(() => {
     try {
       if (!token && globalHomeBg) {
@@ -181,35 +190,50 @@ const Home = () => {
         document.body.style.backgroundImage = "";
         document.body.style.backgroundColor = "#0d1117";
       }
-    } catch { }
+    } catch {}
   }, [token, globalHomeBg]);
 
-  // Limpiar body al desmontar
   useEffect(() => {
     return () => {
       try {
         document.body.style.backgroundImage = "";
         document.body.style.backgroundColor = "";
-      } catch { }
+      } catch {}
     };
   }, []);
 
-  // Cerrar modal con Esc
   useEffect(() => {
     if (!adminEditing) return;
-    const onKey = (e) => { if (e.key === "Escape") handleCancelEdit(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") handleCancelEdit();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [adminEditing]);
 
-  if (loading) return (
-    <div className="d-flex flex-column align-items-center justify-content-center" style={{ minHeight: "60vh", background: "#0d1117" }}>
-      <div className="spinner-border mb-3" style={{ color: "#00f2fe", width: "3rem", height: "3rem" }}></div>
-      <p style={{ color: "#00f2fe", letterSpacing: "3px", fontSize: "0.8rem", textTransform: "uppercase" }}>
-        Cargando destinos...
-      </p>
-    </div>
-  );
+  if (loading) {
+    return (
+      <div
+        className="d-flex flex-column align-items-center justify-content-center"
+        style={{ minHeight: "60vh", background: "#0d1117" }}
+      >
+        <div
+          className="spinner-border mb-3"
+          style={{ color: "#00f2fe", width: "3rem", height: "3rem" }}
+        ></div>
+        <p
+          style={{
+            color: "#00f2fe",
+            letterSpacing: "3px",
+            fontSize: "0.8rem",
+            textTransform: "uppercase"
+          }}
+        >
+          Cargando destinos...
+        </p>
+      </div>
+    );
+  }
 
   const chosenBgUrl = previewBg || (token ? (user?.background || globalHomeBg) : globalHomeBg);
   const heroBgUrl = chosenBgUrl ? normalizeUrl(chosenBgUrl) : null;
@@ -217,7 +241,6 @@ const Home = () => {
     ? `linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), url(${heroBgUrl})`
     : "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)";
 
-  // Admin handlers
   const handleSelectFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -241,37 +264,48 @@ const Home = () => {
       document.body.style.backgroundRepeat = "no-repeat";
       document.body.style.backgroundAttachment = "fixed";
       document.body.style.backgroundColor = "#071017";
-    } catch { }
+    } catch {}
   };
 
   const handleUploadHomeBackground = async () => {
     if (!isAdmin) return alert("Solo administradores pueden cambiar el fondo.");
     const selectedFile = fileInputRef.current._selectedFile;
     const imageUrl = (urlInputRef.current.value || "").trim();
+
     if (!selectedFile && !imageUrl) return alert("Selecciona archivo o pega URL.");
 
     setUploadingBg(true);
+
     try {
       const tokenLocal = localStorage.getItem("token");
+
       if (selectedFile) {
         const fd = new FormData();
         fd.append("background", selectedFile);
+
         const uploadRes = await fetch(`${API_BASE}/api/admin/settings/home_background`, {
           method: "POST",
           headers: tokenLocal ? { Authorization: `Bearer ${tokenLocal}` } : {},
           body: fd
         });
+
         const txt = await uploadRes.text();
         let data = null;
-        try { data = JSON.parse(txt); } catch { }
+        try {
+          data = JSON.parse(txt);
+        } catch {}
+
         if (!uploadRes.ok) {
           alert("Error subiendo imagen: " + (data?.msg || txt || uploadRes.status));
           setUploadingBg(false);
           return;
         }
+
         const newBg = data?.background || data?.url || txt;
         setGlobalHomeBg(newBg);
-        try { localStorage.setItem("globalHomeBg", newBg); } catch { }
+        try {
+          localStorage.setItem("globalHomeBg", newBg);
+        } catch {}
         setPreviewBg(newBg);
         applyBodyBackground(newBg);
         fileInputRef.current._selectedFile = null;
@@ -287,17 +321,24 @@ const Home = () => {
           },
           body: JSON.stringify({ background: imageUrl })
         });
+
         const txt = await setRes.text();
         let data = null;
-        try { data = JSON.parse(txt); } catch { }
+        try {
+          data = JSON.parse(txt);
+        } catch {}
+
         if (!setRes.ok) {
           alert("Error guardando la URL: " + (data?.msg || txt || setRes.status));
           setUploadingBg(false);
           return;
         }
+
         const newBg = data?.background || imageUrl;
         setGlobalHomeBg(newBg);
-        try { localStorage.setItem("globalHomeBg", newBg); } catch { }
+        try {
+          localStorage.setItem("globalHomeBg", newBg);
+        } catch {}
         setPreviewBg(newBg);
         applyBodyBackground(newBg);
         if (urlInputRef.current) urlInputRef.current.value = "";
@@ -322,7 +363,6 @@ const Home = () => {
 
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh" }}>
-      {/* HERO */}
       <div
         className="text-center text-white"
         style={{
@@ -339,16 +379,31 @@ const Home = () => {
           transition: "all 0.5s ease",
         }}
       >
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "4px", background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)" }} />
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "4px",
+            background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)"
+          }}
+        />
 
         {isAdmin && (
           <button
             onClick={() => setAdminEditing(true)}
             className="btn btn-sm"
             style={{
-              position: "absolute", top: 18, right: 18, zIndex: 40,
-              background: "rgba(0,0,0,0.45)", border: "1px solid rgba(255,255,255,0.06)",
-              color: "#00f2fe", padding: "6px 10px", borderRadius: "999px",
+              position: "absolute",
+              top: 18,
+              right: 18,
+              zIndex: 40,
+              background: "rgba(0,0,0,0.45)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              color: "#00f2fe",
+              padding: "6px 10px",
+              borderRadius: "999px",
               backdropFilter: "blur(6px)"
             }}
           >
@@ -358,69 +413,176 @@ const Home = () => {
 
         {token && user ? (
           <>
-            <p style={{ color: "#00f2fe", letterSpacing: "3px", fontSize: "0.7rem", textTransform: "uppercase", marginBottom: "8px" }}>
+            <p
+              style={{
+                color: "#00f2fe",
+                letterSpacing: "3px",
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                marginBottom: "8px"
+              }}
+            >
               Bienvenido de vuelta
             </p>
             <h1 className="fw-black" style={{ fontSize: "2.5rem", letterSpacing: "-1px" }}>
               ¡Hola, {user.name}! 👋
             </h1>
-            <p className="mb-4" style={{ color: "rgba(255,255,255,0.7)", maxWidth: "450px", fontSize: "1rem" }}>
+            <p
+              className="mb-4"
+              style={{
+                color: "rgba(255,255,255,0.7)",
+                maxWidth: "450px",
+                fontSize: "1rem"
+              }}
+            >
               Qué bueno verte de nuevo. ¿Qué hacemos hoy?
             </p>
             <div className="d-flex gap-3 flex-wrap justify-content-center mt-2">
-              <button onClick={() => navigate("/new-post")} className="btn fw-bold rounded-pill shadow-lg"
-                style={{ background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000", padding: "10px 30px" }}>
+              <button
+                onClick={() => navigate("/new-post")}
+                className="btn fw-bold rounded-pill shadow-lg"
+                style={{
+                  background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                  border: "none",
+                  color: "#000",
+                  padding: "10px 30px"
+                }}
+              >
                 ✍️ Crear publicación
               </button>
-              <button onClick={() => navigate("/create-route")} className="btn fw-bold rounded-pill shadow-lg"
-                style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", border: "none", color: "#000", padding: "10px 30px" }}>
+              <button
+                onClick={() => navigate("/create-route")}
+                className="btn fw-bold rounded-pill shadow-lg"
+                style={{
+                  background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+                  border: "none",
+                  color: "#000",
+                  padding: "10px 30px"
+                }}
+              >
                 🗺️ Crear ruta
               </button>
             </div>
           </>
         ) : (
           <>
-            <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem", textTransform: "uppercase", marginBottom: "8px" }}>
+            <p
+              style={{
+                color: "#f9d423",
+                letterSpacing: "3px",
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                marginBottom: "8px"
+              }}
+            >
               Comunidad Viajera
             </p>
             <h1 className="fw-black" style={{ fontSize: "2.8rem", letterSpacing: "-1.5px" }}>
               Explora{" "}
-              <span style={{ background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              <span
+                style={{
+                  background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent"
+                }}
+              >
                 BlogYU
               </span>
             </h1>
-            <p className="mb-4" style={{ color: "rgba(255,255,255,0.65)", maxWidth: "450px", fontSize: "0.95rem" }}>
+            <p
+              className="mb-4"
+              style={{
+                color: "rgba(255,255,255,0.65)",
+                maxWidth: "450px",
+                fontSize: "0.95rem"
+              }}
+            >
               Encuentra los mejores sitios recomendados por la comunidad viajera.
             </p>
-            <button onClick={() => navigate("/register")} className="btn fw-bold rounded-pill shadow-lg mt-2"
-              style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", border: "none", color: "#000", padding: "10px 30px" }}>
+            <button
+              onClick={() => navigate("/register")}
+              className="btn fw-bold rounded-pill shadow-lg mt-2"
+              style={{
+                background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+                border: "none",
+                color: "#000",
+                padding: "10px 30px"
+              }}
+            >
               ¡Únete a la comunidad!
             </button>
           </>
         )}
 
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px", background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: "1px",
+            background: "linear-gradient(to right, transparent, #00f2fe, transparent)"
+          }}
+        />
       </div>
 
-      {/* Modal admin */}
       {adminEditing && (
         <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            zIndex: 1200,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20
+          }}
           onClick={handleCancelEdit}
         >
           <div
-            style={{ width: "100%", maxWidth: 920, background: "#0b0e12", borderRadius: 12, padding: 18, border: "1px solid rgba(255,255,255,0.04)" }}
+            style={{
+              width: "100%",
+              maxWidth: 920,
+              background: "#0b0e12",
+              borderRadius: 12,
+              padding: 18,
+              border: "1px solid rgba(255,255,255,0.04)"
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 style={{ margin: 0, color: "#fff" }}>Editar fondo del Home (solo admin)</h5>
               <div style={{ display: "flex", gap: 10 }}>
-                <button className="btn btn-sm" onClick={handleCancelEdit}
-                  style={{ minWidth: 110, padding: "6px 12px", background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)", color: "#000", fontWeight: "700", border: "none", borderRadius: 6 }}>
+                <button
+                  className="btn btn-sm"
+                  onClick={handleCancelEdit}
+                  style={{
+                    minWidth: 110,
+                    padding: "6px 12px",
+                    background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+                    color: "#000",
+                    fontWeight: "700",
+                    border: "none",
+                    borderRadius: 6
+                  }}
+                >
                   Cancelar
                 </button>
-                <button className="btn btn-sm" disabled={uploadingBg} onClick={handleUploadHomeBackground}
-                  style={{ minWidth: 110, padding: "6px 12px", background: "linear-gradient(135deg,#00f2fe,#4facfe)", color: "#000", fontWeight: "700", border: "none", borderRadius: 6 }}>
+                <button
+                  className="btn btn-sm"
+                  disabled={uploadingBg}
+                  onClick={handleUploadHomeBackground}
+                  style={{
+                    minWidth: 110,
+                    padding: "6px 12px",
+                    background: "linear-gradient(135deg,#00f2fe,#4facfe)",
+                    color: "#000",
+                    fontWeight: "700",
+                    border: "none",
+                    borderRadius: 6
+                  }}
+                >
                   {uploadingBg ? "Guardando..." : "Guardar"}
                 </button>
               </div>
@@ -431,58 +593,106 @@ const Home = () => {
                 <p style={{ color: "rgba(255,255,255,0.7)" }}>Subir imagen</p>
                 <label className="btn btn-outline-secondary w-100 mb-2">
                   Seleccionar archivo
-                  <input type="file" accept="image/*" onChange={handleSelectFile} style={{ display: "none" }} ref={fileInputRef} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleSelectFile}
+                    style={{ display: "none" }}
+                    ref={fileInputRef}
+                  />
                 </label>
-                <small style={{ color: "rgba(255,255,255,0.45)" }}>O pega una URL abajo.</small>
+                <small style={{ color: "rgba(255,255,255,0.45)" }}>
+                  O pega una URL abajo.
+                </small>
               </div>
+
               <div className="col-md-6">
                 <p style={{ color: "rgba(255,255,255,0.7)" }}>Pegar URL de imagen</p>
                 <div className="d-flex gap-2">
                   <input ref={urlInputRef} className="form-control" placeholder="https://..." />
-                  <button className="btn btn-secondary" onClick={handleSetPreviewFromUrl}>Previsualizar</button>
+                  <button className="btn btn-secondary" onClick={handleSetPreviewFromUrl}>
+                    Previsualizar
+                  </button>
                 </div>
               </div>
+
               <div className="col-12">
                 <p style={{ color: "rgba(255,255,255,0.7)" }}>Previsualización</p>
-                <div style={{
-                  height: 180, borderRadius: 8, overflow: "hidden",
-                  border: "1px solid rgba(255,255,255,0.04)",
-                  background: previewBg
-                    ? `url(${previewBg}) center/cover no-repeat`
-                    : globalHomeBg
+                <div
+                  style={{
+                    height: 180,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    border: "1px solid rgba(255,255,255,0.04)",
+                    background: previewBg
+                      ? `url(${previewBg}) center/cover no-repeat`
+                      : globalHomeBg
                       ? `url(${normalizeUrl(globalHomeBg)}) center/cover no-repeat`
                       : "linear-gradient(135deg,#0f2027,#203a43)"
-                }} />
-                <small style={{ color: "rgba(255,255,255,0.45)" }}>Previsualización local — haz click en Guardar para aplicar globalmente.</small>
+                  }}
+                />
+                <small style={{ color: "rgba(255,255,255,0.45)" }}>
+                  Previsualización local — haz click en Guardar para aplicar globalmente.
+                </small>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Contenido principal */}
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
         <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
           {CATEGORIES.map((cat) => (
             <button
               key={cat.id}
-              onClick={() => cat.id === "todos" ? navigate("/") : navigate(`/?category=${cat.id}`)}
+              onClick={() =>
+                cat.id === "todos" ? navigate("/") : navigate(`/?category=${cat.id}`)
+              }
               className="btn rounded-pill px-4 fw-bold"
-              style={activeCategory === cat.id
-                ? { background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000" }
-                : { background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)" }
-              }>
+              style={
+                activeCategory === cat.id
+                  ? {
+                      background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                      border: "none",
+                      color: "#000"
+                    }
+                  : {
+                      background: "transparent",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      color: "rgba(255,255,255,0.7)"
+                    }
+              }
+            >
               {cat.name}
             </button>
           ))}
         </div>
 
         <div className="d-flex align-items-center mb-4">
-          <div style={{ height: "2px", flex: 1, background: "linear-gradient(to right, transparent, rgba(0,242,254,0.3))" }} />
-          <span className="mx-3 fw-bold text-uppercase" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "3px", fontSize: "0.75rem" }}>
+          <div
+            style={{
+              height: "2px",
+              flex: 1,
+              background: "linear-gradient(to right, transparent, rgba(0,242,254,0.3))"
+            }}
+          />
+          <span
+            className="mx-3 fw-bold text-uppercase"
+            style={{
+              color: "rgba(255,255,255,0.4)",
+              letterSpacing: "3px",
+              fontSize: "0.75rem"
+            }}
+          >
             {activeCategory === "todos" ? "Todos los destinos" : `Destinos · ${activeCategory}`}
           </span>
-          <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
+          <div
+            style={{
+              height: "2px",
+              flex: 1,
+              background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))"
+            }}
+          />
         </div>
 
         <div className="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
@@ -506,7 +716,9 @@ const Home = () => {
         </div>
       </div>
 
-      <style>{`body { background-color: #0d1117 !important; }`}</style>
+      <style>{`
+        body { background-color: #0d1117 !important; }
+      `}</style>
     </div>
   );
 };

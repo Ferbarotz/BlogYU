@@ -2,7 +2,7 @@
  * Devuelve la URL base del backend.
  * Prioridad:
  *  1) REACT_APP_BACKEND_URL / BACKEND_URL
- *  2) Si estamos en Codespaces (*.app.github.dev) reemplaza -8080. por -5000.
+ *  2) En Codespaces / localhost usa "" para aprovechar el proxy de webpack
  *  3) Fallback: http(s)://hostname:5000
  */
 export function getBackendURL() {
@@ -12,7 +12,7 @@ export function getBackendURL() {
       (process.env.REACT_APP_BACKEND_URL || process.env.BACKEND_URL)) ||
     null;
 
-  if (env) return env;
+  if (env) return env.replace(/\/$/, "");
 
   const backendPort =
     (typeof process !== "undefined" &&
@@ -20,25 +20,56 @@ export function getBackendURL() {
       process.env.REACT_APP_BACKEND_PORT) ||
     "5000";
 
-  if (typeof window === "undefined") return `http://127.0.0.1:${backendPort}`;
-
-  const { hostname, port, protocol } = window.location;
-
-  // Codespaces: something-8080.app.github.dev -> something-5000.app.github.dev
-  if (hostname && hostname.includes("app.github.dev")) {
-    const frontendPort = port || "8080";
-    const replaced = hostname.replace(`-${frontendPort}.`, `-${backendPort}.`);
-    return `https://${replaced}`;
+  if (typeof window === "undefined") {
+    return `http://127.0.0.1:${backendPort}`;
   }
 
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `${protocol}//${hostname}:${backendPort}`;
+  const { hostname, protocol } = window.location;
+
+  if (
+    hostname.includes("app.github.dev") ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1"
+  ) {
+    return "";
   }
 
-  return `${protocol}//${hostname}:${backendPort}`;
+  const url = `${protocol}//${hostname}:${backendPort}`;
+  console.log("[backend.js] Inferred BACKEND:", url);
+  return url;
 }
 
-// ✅ Esto es lo que tus componentes están importando
 export const API_BASE = getBackendURL();
-
 export default getBackendURL;
+
+export function authHeaders(extra = {}) {
+  try {
+    const token = localStorage.getItem("token");
+    const headers = { ...extra };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return headers;
+  } catch (e) {
+    return { ...extra };
+  }
+}
+
+export function jsonAuthHeaders() {
+  return authHeaders({ "Content-Type": "application/json" });
+}
+
+export async function authFetch(path, options = {}) {
+  const base = (API_BASE || "").replace(/\/$/, "");
+  const url =
+    typeof path === "string" && /^https?:\/\//i.test(path)
+      ? path
+      : path && path.startsWith("/")
+      ? `${base}${path}`
+      : `${base}/${path}`;
+
+  const combinedHeaders = { ...authHeaders(), ...(options.headers || {}) };
+  const finalOptions = { ...options, headers: combinedHeaders };
+
+  console.log("[authFetch]", finalOptions.method || "GET", url, finalOptions);
+
+  return fetch(url, finalOptions);
+}
