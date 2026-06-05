@@ -2,10 +2,10 @@
  * Devuelve la URL base del backend.
  * Prioridad:
  *  1) REACT_APP_BACKEND_URL / BACKEND_URL
- *  2) Detección Codespaces: transforma -8080. -> -5000.
+ *  2) En Codespaces / localhost usa "" para aprovechar el proxy de webpack
  *  3) Fallback: http(s)://hostname:5000
  */
-function getBackendURL() {
+export function getBackendURL() {
   const env =
     (typeof process !== "undefined" &&
       process.env &&
@@ -20,23 +20,20 @@ function getBackendURL() {
       process.env.REACT_APP_BACKEND_PORT) ||
     "5000";
 
-  if (typeof window === "undefined") return `http://127.0.0.1:${backendPort}`;
-
-  const { hostname, port, protocol } = window.location;
-
-  // Codespaces: something-8080.app.github.dev -> something-5000.app.github.dev
-  if (hostname && hostname.includes("app.github.dev")) {
-    const frontendPort = port || "8080";
-    const replaced = hostname.replace(`-${frontendPort}.`, `-${backendPort}.`);
-    const url = `https://${replaced}`;
-    console.log("[backend.js] Codespace detected, using BACKEND:", url);
-    return url;
+  if (typeof window === "undefined") {
+    return `http://127.0.0.1:${backendPort}`;
   }
 
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    const url = `${protocol}//${hostname}:${backendPort}`;
-    console.log("[backend.js] Local dev, using BACKEND:", url);
-    return url;
+  const { hostname, protocol } = window.location;
+
+  // En Codespaces y desarrollo local usamos rutas relativas
+  // para que webpack proxy mande /api/* al puerto 5000
+  if (
+    hostname.includes("app.github.dev") ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1"
+  ) {
+    return "";
   }
 
   const url = `${protocol}//${hostname}:${backendPort}`;
@@ -67,7 +64,6 @@ export function authHeaders(extra = {}) {
     if (token) headers["Authorization"] = `Bearer ${token}`;
     return headers;
   } catch (e) {
-    // si localStorage no está disponible (SSR o tests), devolver only extra
     return { ...extra };
   }
 }
@@ -92,11 +88,10 @@ export async function authFetch(path, options = {}) {
       ? `${base}${path}`
       : `${base}/${path}`;
 
-  // combinar headers: authHeaders < options.headers
-  const combinedHeaders = { ...(authHeaders()), ...(options.headers || {}) };
+  const combinedHeaders = { ...authHeaders(), ...(options.headers || {}) };
   const finalOptions = { ...options, headers: combinedHeaders };
 
-  console.log("[authFetch] ", finalOptions.method || "GET", url, finalOptions);
+  console.log("[authFetch]", finalOptions.method || "GET", url, finalOptions);
 
   return fetch(url, finalOptions);
 }

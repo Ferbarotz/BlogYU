@@ -1,3 +1,4 @@
+// src/front/pages/Login.jsx
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE } from '../api/backend';
@@ -9,31 +10,46 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
-  const handleChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const handleChange = (e) => {
+    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-        window.dispatchEvent(new Event("authChange"));
-        navigate("/");
-      } else {
+    setMessage('');
+
+    const tryLogin = async (retries = 3) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          window.dispatchEvent(new Event("authChange"));
+          navigate("/");
+          return;
+        }
+
         setMessage('Error: ' + (data.msg || 'Credenciales incorrectas'));
+        setLoading(false);
+      } catch (error) {
+        if (retries > 0) {
+          setTimeout(() => tryLogin(retries - 1), 1500);
+        } else {
+          setMessage('Error de conexión con el servidor. Inténtalo de nuevo.');
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      setMessage('Error de conexión con el servidor');
-    } finally {
-      setLoading(false);
-    }
+    };
+
+    tryLogin();
   };
 
   return (
@@ -41,46 +57,78 @@ const Login = () => {
       style={{ minHeight: "100vh", background: "#0d1117" }}
       className="d-flex align-items-center justify-content-center p-4"
     >
-      {/* Fondo decorativo */}
-      <div style={{
-        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-        background: "radial-gradient(ellipse at 20% 50%, rgba(0,242,254,0.05) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(79,172,254,0.05) 0%, transparent 60%)",
-        pointerEvents: "none"
-      }} />
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background:
+            "radial-gradient(ellipse at 20% 50%, rgba(0,242,254,0.05) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(79,172,254,0.05) 0%, transparent 60%)",
+          pointerEvents: "none"
+        }}
+      />
 
       <div style={{ width: "100%", maxWidth: "440px", position: "relative" }}>
-
-        {/* LOGO / TÍTULO */}
         <div className="text-center mb-4">
           <Link to="/" style={{ textDecoration: "none" }}>
-            <h2 className="fw-black mb-0" style={{ fontSize: "2.2rem", letterSpacing: "-1px", color: "#fff" }}>
+            <h2
+              className="fw-black mb-0"
+              style={{ fontSize: "2.2rem", letterSpacing: "-1px", color: "#fff" }}
+            >
               Blog
-              <span style={{
-                background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
-              }}>YU</span>
+              <span
+                style={{
+                  background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent"
+                }}
+              >
+                YU
+              </span>
             </h2>
-            <p style={{ color: "#f9d423", letterSpacing: "4px", fontSize: "0.65rem", textTransform: "uppercase", marginTop: "2px" }}>
+            <p
+              style={{
+                color: "#f9d423",
+                letterSpacing: "4px",
+                fontSize: "0.65rem",
+                textTransform: "uppercase",
+                marginTop: "2px"
+              }}
+            >
               Comunidad Viajera
             </p>
           </Link>
         </div>
 
-        {/* CARD */}
-        <div style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: "20px",
-          overflow: "hidden",
-          boxShadow: "0 25px 50px rgba(0,0,0,0.5)"
-        }}>
-
-          <div style={{ height: "4px", background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)" }} />
+        <div
+          style={{
+            background: "rgba(255,255,255,0.03)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "20px",
+            overflow: "hidden",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.5)"
+          }}
+        >
+          <div
+            style={{
+              height: "4px",
+              background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)"
+            }}
+          />
 
           <div className="p-4 p-md-5">
-
             <div className="mb-4">
-              <p style={{ color: "#f9d423", letterSpacing: "3px", fontSize: "0.7rem", textTransform: "uppercase", marginBottom: "6px" }}>
+              <p
+                style={{
+                  color: "#f9d423",
+                  letterSpacing: "3px",
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                  marginBottom: "6px"
+                }}
+              >
                 Acceso
               </p>
               <h3 className="fw-black text-white mb-1" style={{ fontSize: "1.8rem" }}>
@@ -92,18 +140,29 @@ const Login = () => {
             </div>
 
             <form onSubmit={handleSubmit}>
-
-              {/* EMAIL */}
               <div className="mb-3">
-                <label style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "2px" }} className="d-block mb-2">
+                <label
+                  style={{
+                    color: "rgba(255,255,255,0.4)",
+                    fontSize: "0.7rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "2px"
+                  }}
+                  className="d-block mb-2"
+                >
                   Correo Electrónico
                 </label>
                 <div className="input-group">
-                  <span className="input-group-text border-end-0" style={{
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "rgba(255,255,255,0.5)"
-                  }}>📧</span>
+                  <span
+                    className="input-group-text border-end-0"
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      color: "rgba(255,255,255,0.5)"
+                    }}
+                  >
+                    📧
+                  </span>
                   <input
                     name="email"
                     type="email"
@@ -121,23 +180,35 @@ const Login = () => {
                       outline: "none"
                     }}
                     className="form-control"
-                    onFocus={(e) => e.target.style.borderColor = "rgba(0,242,254,0.4)"}
-                    onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+                    onFocus={(e) => (e.target.style.borderColor = "rgba(0,242,254,0.4)")}
+                    onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
                   />
                 </div>
               </div>
 
-              {/* CONTRASEÑA */}
               <div className="mb-4">
-                <label style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "2px" }} className="d-block mb-2">
+                <label
+                  style={{
+                    color: "rgba(255,255,255,0.4)",
+                    fontSize: "0.7rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "2px"
+                  }}
+                  className="d-block mb-2"
+                >
                   Contraseña
                 </label>
                 <div className="input-group">
-                  <span className="input-group-text border-end-0" style={{
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "rgba(255,255,255,0.5)"
-                  }}>🔒</span>
+                  <span
+                    className="input-group-text border-end-0"
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      color: "rgba(255,255,255,0.5)"
+                    }}
+                  >
+                    🔒
+                  </span>
                   <input
                     name="password"
                     type={showPassword ? "text" : "password"}
@@ -155,8 +226,8 @@ const Login = () => {
                       outline: "none"
                     }}
                     className="form-control"
-                    onFocus={(e) => e.target.style.borderColor = "rgba(0,242,254,0.4)"}
-                    onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+                    onFocus={(e) => (e.target.style.borderColor = "rgba(0,242,254,0.4)")}
+                    onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
                   />
                   <button
                     type="button"
@@ -170,40 +241,53 @@ const Login = () => {
                       padding: "0 14px",
                       cursor: "pointer"
                     }}
-                  >{showPassword ? "🙈" : "👁️"}</button>
+                  >
+                    {showPassword ? "🙈" : "👁️"}
+                  </button>
                 </div>
               </div>
 
-              {/* ERROR */}
               {message && (
-                <div className="mb-3 py-2 px-3 text-center small rounded-3" style={{
-                  background: "rgba(255,78,80,0.15)",
-                  border: "1px solid rgba(255,78,80,0.3)",
-                  color: "#ff6b6b"
-                }}>
+                <div
+                  className="mb-3 py-2 px-3 text-center small rounded-3"
+                  style={{
+                    background: "rgba(255,78,80,0.15)",
+                    border: "1px solid rgba(255,78,80,0.3)",
+                    color: "#ff6b6b"
+                  }}
+                >
                   ⚠️ {message}
                 </div>
               )}
 
-              {/* BOTÓN */}
               <button
                 type="submit"
                 disabled={loading}
                 className="btn w-100 fw-bold"
                 style={{
-                  background: loading ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-                  border: "none", color: "#000",
-                  padding: "12px", fontSize: "0.95rem",
-                  borderRadius: "10px", letterSpacing: "1px",
+                  background: loading
+                    ? "rgba(255,255,255,0.1)"
+                    : "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                  border: "none",
+                  color: "#000",
+                  padding: "12px",
+                  fontSize: "0.95rem",
+                  borderRadius: "10px",
+                  letterSpacing: "1px",
                   boxShadow: "0 0 20px rgba(0,242,254,0.3)",
                   transition: "all 0.3s ease"
                 }}
                 onMouseOver={(e) => !loading && (e.currentTarget.style.transform = "scale(1.02)")}
-                onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+                onMouseOut={(e) => (e.currentTarget.style.transform = "scale(1)")}
               >
                 {loading ? (
-                  <><span className="spinner-border spinner-border-sm me-2"></span>Entrando...</>
-                ) : "🔑 Iniciar Sesión"}
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2"></span>
+                    Conectando...
+                  </>
+                ) : (
+                  "🔑 Iniciar Sesión"
+                )}
               </button>
 
               <p className="text-center mt-3">
@@ -215,7 +299,15 @@ const Login = () => {
 
             <div className="d-flex align-items-center my-4">
               <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
-              <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.75rem", margin: "0 12px" }}>¿Nuevo aquí?</span>
+              <span
+                style={{
+                  color: "rgba(255,255,255,0.3)",
+                  fontSize: "0.75rem",
+                  margin: "0 12px"
+                }}
+              >
+                ¿Nuevo aquí?
+              </span>
               <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
             </div>
 
@@ -226,8 +318,10 @@ const Login = () => {
                 background: "transparent",
                 border: "1px solid rgba(255,255,255,0.15)",
                 color: "rgba(255,255,255,0.7)",
-                padding: "11px", fontSize: "0.9rem",
-                borderRadius: "10px", letterSpacing: "0.5px",
+                padding: "11px",
+                fontSize: "0.9rem",
+                borderRadius: "10px",
+                letterSpacing: "0.5px",
                 transition: "all 0.3s ease"
               }}
               onMouseOver={(e) => {
