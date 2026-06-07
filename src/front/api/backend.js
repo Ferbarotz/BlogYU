@@ -1,11 +1,3 @@
-/**
- * Devuelve la URL base del backend.
- * Prioridad:
- *  1) REACT_APP_BACKEND_URL / BACKEND_URL
- *  2) En producción usa "" para que el frontend llame al mismo dominio
- *  3) En Codespaces / localhost usa "" para aprovechar el proxy de webpack
- *  4) Fallback: http(s)://hostname:5000
- */
 export function getBackendURL() {
   const env =
     (typeof process !== "undefined" &&
@@ -15,28 +7,12 @@ export function getBackendURL() {
 
   if (env) return env.replace(/\/$/, "");
 
-  if (
-    typeof process !== "undefined" &&
-    process.env &&
-    process.env.NODE_ENV === "production"
-  ) {
-    return "";
-  }
-
-  const backendPort =
-    (typeof process !== "undefined" &&
-      process.env &&
-      process.env.REACT_APP_BACKEND_PORT) ||
-    "5000";
-
   if (typeof window === "undefined") {
-    return `http://127.0.0.1:${backendPort}`;
+    return "http://127.0.0.1:5000";
   }
 
-  const { hostname, protocol } = window.location;
+  const { hostname } = window.location;
 
-  // En Codespaces y desarrollo local usamos rutas relativas
-  // para que webpack proxy mande /api/* al puerto 5000
   if (
     hostname.includes("app.github.dev") ||
     hostname === "localhost" ||
@@ -45,9 +21,8 @@ export function getBackendURL() {
     return "";
   }
 
-  const url = `${protocol}//${hostname}:${backendPort}`;
-  console.log("[backend.js] Inferred BACKEND:", url);
-  return url;
+  // Produccion (Render, cualquier otro dominio): rutas relativas
+  return "";
 }
 
 export const API_BASE = getBackendURL();
@@ -79,8 +54,6 @@ export async function authFetch(path, options = {}) {
 
   const combinedHeaders = { ...authHeaders(), ...(options.headers || {}) };
   const finalOptions = { ...options, headers: combinedHeaders };
-
-  console.log("[authFetch]", finalOptions.method || "GET", url, finalOptions);
 
   return fetch(url, finalOptions);
 }
