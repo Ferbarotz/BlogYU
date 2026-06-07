@@ -978,10 +978,8 @@ def list_uploads():
 
 @api.route('/secret-setup-admin-xyz123', methods=['GET'])
 def setup_admin():
-    """Ruta temporal para crear admin - BORRAR DESPUÉS"""
     from src.api.extensions import db
     from src.api.models import User
-    
     try:
         user = User.query.filter_by(email='ferbarotz@gmail.com').first()
         if user:
@@ -989,9 +987,8 @@ def setup_admin():
             db.session.commit()
             return jsonify({"ok": True, "msg": f"Admin activado para {user.email}"}), 200
         else:
-            # Crear usuario admin nuevo
             user = User(username='Fernando', email='ferbarotz@gmail.com', is_admin=True)
-            user.set_password('TU_CONTRASEÑA_AQUI')
+            user.password = 'Admin@Fer@Bar@Ort@'
             db.session.add(user)
             db.session.commit()
             return jsonify({"ok": True, "msg": "Admin creado"}), 200
