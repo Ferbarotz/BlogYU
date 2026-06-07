@@ -975,3 +975,25 @@ def list_uploads():
         return jsonify({"files": image_files}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@api.route('/secret-setup-admin-xyz123', methods=['GET'])
+def setup_admin():
+    """Ruta temporal para crear admin - BORRAR DESPUÉS"""
+    from src.api.extensions import db
+    from src.api.models import User
+    
+    try:
+        user = User.query.filter_by(email='ferbarotz@gmail.com').first()
+        if user:
+            user.is_admin = True
+            db.session.commit()
+            return jsonify({"ok": True, "msg": f"Admin activado para {user.email}"}), 200
+        else:
+            # Crear usuario admin nuevo
+            user = User(username='Fernando', email='ferbarotz@gmail.com', is_admin=True)
+            user.set_password('TU_CONTRASEÑA_AQUI')
+            db.session.add(user)
+            db.session.commit()
+            return jsonify({"ok": True, "msg": "Admin creado"}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
