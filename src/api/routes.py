@@ -980,17 +980,26 @@ def list_uploads():
 def setup_admin():
     from src.api.extensions import db
     from src.api.models import User
+
     try:
-        user = User.query.filter_by(email='ferbarotz@gmail.com').first()
+        target_email = 'ferbarotz@gmail.com'   # ← Admin
+
+        user = User.query.filter_by(email=target_email).first()
+
         if user:
             user.is_admin = True
             db.session.commit()
             return jsonify({"ok": True, "msg": f"Admin activado para {user.email}"}), 200
         else:
-            user = User(username='Fernando', email='ferbarotz@gmail.com', is_admin=True)
+            user = User(
+                name='Fernando Barrera',
+                email=target_email,
+                is_admin=True
+            )
             user.password = 'Admin@Fer@Bar@Ort@'
             db.session.add(user)
             db.session.commit()
-            return jsonify({"ok": True, "msg": "Admin creado"}), 200
+            return jsonify({"ok": True, "msg": f"Admin creado para {user.email}"}), 200
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
