@@ -6,7 +6,6 @@
     "build": "webpack --mode production"
   },
   "dependencies": {
-    "@react-leaflet/core": "2.5.0",
     "bootstrap": "^5.3.8",
     "browser-image-compression": "^2.0.2",
     "leaflet": "^1.9.4",
