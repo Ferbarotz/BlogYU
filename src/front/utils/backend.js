@@ -2,8 +2,9 @@
  * Devuelve la URL base del backend.
  * Prioridad:
  *  1) REACT_APP_BACKEND_URL / BACKEND_URL
- *  2) En Codespaces / localhost usa "" para aprovechar el proxy de webpack
- *  3) Fallback: http(s)://hostname:5000
+ *  2) En producción usa "" para que el frontend llame al mismo dominio
+ *  3) En Codespaces / localhost usa "" para aprovechar el proxy de webpack
+ *  4) Fallback: http(s)://hostname:5000
  */
 export function getBackendURL() {
   const env =
@@ -13,6 +14,14 @@ export function getBackendURL() {
     null;
 
   if (env) return env.replace(/\/$/, "");
+
+  if (
+    typeof process !== "undefined" &&
+    process.env &&
+    process.env.NODE_ENV === "production"
+  ) {
+    return "";
+  }
 
   const backendPort =
     (typeof process !== "undefined" &&
@@ -26,6 +35,8 @@ export function getBackendURL() {
 
   const { hostname, protocol } = window.location;
 
+  // En Codespaces y desarrollo local usamos rutas relativas
+  // para que webpack proxy mande /api/* al puerto 5000
   if (
     hostname.includes("app.github.dev") ||
     hostname === "localhost" ||
@@ -40,7 +51,7 @@ export function getBackendURL() {
 }
 
 export const API_BASE = getBackendURL();
-export default getBackendURL;
+export default API_BASE;
 
 export function authHeaders(extra = {}) {
   try {

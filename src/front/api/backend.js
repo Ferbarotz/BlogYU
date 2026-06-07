@@ -2,8 +2,9 @@
  * Devuelve la URL base del backend.
  * Prioridad:
  *  1) REACT_APP_BACKEND_URL / BACKEND_URL
- *  2) En Codespaces / localhost usa "" para aprovechar el proxy de webpack
- *  3) Fallback: http(s)://hostname:5000
+ *  2) En producción usa "" para que el frontend llame al mismo dominio
+ *  3) En Codespaces / localhost usa "" para aprovechar el proxy de webpack
+ *  4) Fallback: http(s)://hostname:5000
  */
 export function getBackendURL() {
   const env =
@@ -13,6 +14,14 @@ export function getBackendURL() {
     null;
 
   if (env) return env.replace(/\/$/, "");
+
+  if (
+    typeof process !== "undefined" &&
+    process.env &&
+    process.env.NODE_ENV === "production"
+  ) {
+    return "";
+  }
 
   const backendPort =
     (typeof process !== "undefined" &&
@@ -42,21 +51,8 @@ export function getBackendURL() {
 }
 
 export const API_BASE = getBackendURL();
-export default getBackendURL;
+export default API_BASE;
 
-/**
- * authHeaders(extra = {}) -> devuelve un objeto con Authorization si existe token en localStorage.
- * jsonAuthHeaders() -> devuelve headers con Content-Type: application/json y Authorization si aplica.
- *
- * Uso:
- *   import { authHeaders, jsonAuthHeaders, API_BASE, authFetch } from "../api/backend";
- *
- *   fetch(`${API_BASE}/api/endpoint`, { headers: authHeaders() })
- *   fetch(`${API_BASE}/api/endpoint`, { headers: jsonAuthHeaders(), method: 'POST', body: JSON.stringify(data)})
- *
- *   // authFetch permite pasar una ruta relativa o absoluta:
- *   authFetch('/api/posts', { method: 'GET' })
- */
 export function authHeaders(extra = {}) {
   try {
     const token = localStorage.getItem("token");
@@ -72,13 +68,6 @@ export function jsonAuthHeaders() {
   return authHeaders({ "Content-Type": "application/json" });
 }
 
-/**
- * authFetch(path, options)
- * - path: puede ser ruta relativa como '/api/posts' o ruta sin slash 'api/posts' o URL absoluta
- * - options: fetch options (method, body, headers, ...)
- *
- * Devuelve la promesa de fetch. No hace parse automático.
- */
 export async function authFetch(path, options = {}) {
   const base = (API_BASE || "").replace(/\/$/, "");
   const url =
