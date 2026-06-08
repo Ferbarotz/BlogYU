@@ -14,6 +14,31 @@ from flask_mail import Message
 from .extensions import db, bcrypt, mail
 from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage
 
+# Cloudinary
+import cloudinary
+import cloudinary.uploader
+
+def init_cloudinary():
+    url = os.environ.get("CLOUDINARY_URL")
+    if url:
+        cloudinary.config(cloudinary_url=url)
+        return True
+    return False
+
+def upload_to_cloudinary(file_obj, folder="blogyu"):
+    """Sube un archivo a Cloudinary y devuelve la URL segura."""
+    init_cloudinary()
+    try:
+        result = cloudinary.uploader.upload(
+            file_obj,
+            folder=folder,
+            resource_type="image"
+        )
+        return result.get("secure_url")
+    except Exception as e:
+        current_app.logger.exception("Error subiendo a Cloudinary")
+        return None
+
 # Blueprint
 api = bp = Blueprint('api', __name__)
 
@@ -206,19 +231,9 @@ def upload_step_image():
     if not allowed_file(file.filename, file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
-    filename = secure_filename(file.filename)
-    filename = f"step_{int(time())}_{filename}"
-    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
-    os.makedirs(uploads_dir, exist_ok=True)
-    save_path = os.path.join(uploads_dir, filename)
-    try:
-        file.save(save_path)
-        current_app.logger.info(f"Imagen subida y guardada: {save_path}")
-    except Exception as ex:
-        current_app.logger.exception("Error guardando archivo")
-        return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
-
-    file_url = f"/api/uploads/{filename}"
+    file_url = upload_to_cloudinary(file, folder="blogyu/steps")
+    if not file_url:
+        return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
     current_app.logger.info(f"URL devuelta para imagen: {file_url}")
     return jsonify({"url": file_url}), 200
 
@@ -262,9 +277,9 @@ def create_post():
                 continue
             if not allowed_file(image_file.filename, image_file):
                 continue
-            filename = f"{int(time())}_{i}_{secure_filename(image_file.filename)}"
-            image_file.save(os.path.join(uploads_dir, filename))
-            saved_urls.append(f"/api/uploads/{filename}")
+            url = upload_to_cloudinary(image_file, folder="blogyu/posts")
+            if url:
+                saved_urls.append(url)
 
     if not title or not content:
         return jsonify({"msg": "title and content required"}), 400
@@ -350,16 +365,13 @@ def update_post(post_id):
         # Subir nuevas fotos
         new_files = [f for f in request.files.getlist('images') if f and f.filename != ""]
         if new_files:
-            uploads_dir = os.path.join(current_app.instance_path, 'uploads')
-            os.makedirs(uploads_dir, exist_ok=True)
             current_count = PostImage.query.filter_by(post_id=p.id).count()
             for i, image_file in enumerate(new_files):
                 if not allowed_file(image_file.filename, image_file):
                     continue
-                filename = f"{int(time())}_{i}_{secure_filename(image_file.filename)}"
-                image_file.save(os.path.join(uploads_dir, filename))
-                url = f"/api/uploads/{filename}"
-                db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
+                url = upload_to_cloudinary(image_file, folder="blogyu/posts")
+                if url:
+                    db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
 
         # Actualizar imagen principal
         db.session.flush()
@@ -467,17 +479,9 @@ def upload_user_background(user_id):
     if not allowed_file(image_file.filename, image_file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
-    filename = f"background_{int(time())}_{secure_filename(image_file.filename)}"
-    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
-    os.makedirs(uploads_dir, exist_ok=True)
-    save_path = os.path.join(uploads_dir, filename)
-    try:
-        image_file.save(save_path)
-    except Exception as ex:
-        current_app.logger.exception("Fallo guardando background")
-        return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
-
-    file_url = f"/api/uploads/{filename}"
+    file_url = upload_to_cloudinary(image_file, folder="blogyu/backgrounds")
+    if not file_url:
+        return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
 
     # SOLO actualizamos user.background
     try:
@@ -524,18 +528,9 @@ def upload_user_profile_pic(user_id):
     if not allowed_file(image_file.filename, image_file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
-    # Guardar archivo
-    filename = f"profile_{int(time())}_{secure_filename(image_file.filename)}"
-    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
-    os.makedirs(uploads_dir, exist_ok=True)
-    save_path = os.path.join(uploads_dir, filename)
-    try:
-        image_file.save(save_path)
-    except Exception as ex:
-        current_app.logger.exception("Fallo guardando avatar")
-        return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
-
-    file_url = f"/api/uploads/{filename}"
+    file_url = upload_to_cloudinary(image_file, folder="blogyu/avatars")
+    if not file_url:
+        return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
 
     # Solo actualizamos profile_pic en el usuario
     try:
