@@ -9,5 +9,6 @@ SQLAlchemy==2.0.36
 gunicorn==21.2.0
 psycopg2-binary==2.9.9
 python-dotenv==1.0.1
-Werkzeug==3.0.6cloudinary==1.44.2
+Werkzeug==3.0.6
+cloudinary==1.44.2
 cloudinary
