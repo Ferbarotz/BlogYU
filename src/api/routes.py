@@ -17,6 +17,7 @@ from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage,
 # Cloudinary
 import cloudinary
 import cloudinary.uploader
+import cloudinary.api
 
 def init_cloudinary():
     url = os.environ.get("CLOUDINARY_URL")
@@ -1002,10 +1003,11 @@ def setup_admin():
 @api.route('/test-cloudinary', methods=['GET'])
 def test_cloudinary():
     import cloudinary
+    import cloudinary.api
     url = os.environ.get("CLOUDINARY_URL", "NO ENCONTRADA")
     try:
         init_cloudinary()
         ping = cloudinary.api.ping()
-        return jsonify({"ok": True, "CLOUDINARY_URL_set": url != "NO ENCONTRADA", "ping": ping}), 200
+        return jsonify({"ok": True, "url_set": "AQUI" not in url, "ping": ping}), 200
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "CLOUDINARY_URL": url}), 500
+        return jsonify({"ok": False, "error": str(e), "url_set": "AQUI" not in url}), 500
