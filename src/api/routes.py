@@ -998,3 +998,14 @@ def setup_admin():
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+@api.route('/test-cloudinary', methods=['GET'])
+def test_cloudinary():
+    import cloudinary
+    url = os.environ.get("CLOUDINARY_URL", "NO ENCONTRADA")
+    try:
+        init_cloudinary()
+        ping = cloudinary.api.ping()
+        return jsonify({"ok": True, "CLOUDINARY_URL_set": url != "NO ENCONTRADA", "ping": ping}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "CLOUDINARY_URL": url}), 500
