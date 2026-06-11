@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { API_BASE } from "../api/backend";
-import RegisterPromptModal from "./RegisterPromptModal";
 
-// ── PLACEHOLDER SIN FOTOS (Manteniendo tu lógica original) ──
+// ── PLACEHOLDER SIN FOTOS ──
 const NoPhotosPlaceholder = () => {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
@@ -56,7 +55,7 @@ const NoPhotosPlaceholder = () => {
   ];
 
   return (
-    <div style={{ position: "relative", height: "180px", background: "#1a1a2e", overflow: "hidden" }}>
+    <div style={{ position: "relative", height: "220px", background: "#1a1a2e", overflow: "hidden" }}>
       {slides[idx]}
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50px", background: "linear-gradient(to top, rgba(13,17,23,0.9), transparent)" }} />
       <div style={{ position: "absolute", bottom: "8px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "6px", zIndex: 2 }}>
@@ -91,10 +90,9 @@ const PostCard = ({
   post,
   onEdit, onDelete, onView,
   showActions = false,
-  showAuthor = true 
+  showAuthor = true
 }) => {
   const [currentPhoto, setCurrentPhoto] = useState(0);
-  //const [showPrompt, setShowPrompt] = useState(false);
   const navigate = useNavigate();
 
   const _title = post?.title ?? title;
@@ -140,173 +138,164 @@ const PostCard = ({
 
   const originalReadHandler = onView ?? onReadMore;
 
- const handleReadMoreClick = () => {
-  if (typeof originalReadHandler === "function") originalReadHandler();
-};
+  const handleReadMoreClick = () => {
+    if (typeof originalReadHandler === "function") originalReadHandler();
+  };
 
   const { name: authorName, avatar, id: authorId } = getAuthor(post || {});
 
   return (
-    <>
-      <div
-        className="h-100 rounded-4 overflow-hidden"
-        style={{
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          transition: "all 0.3s ease",
-          display: "flex", flexDirection: "column"
-        }}
-        onMouseOver={(e) => e.currentTarget.style.border = "1px solid rgba(0,242,254,0.5)"}
-        onMouseOut={(e) => e.currentTarget.style.border = "1px solid rgba(255,255,255,0.08)"}
-      >
-        {/* ── ÁREA DE FOTO ── */}
-        <div style={{ position: "relative", height: "180px", background: "#1a1a2e", overflow: "hidden" }}>
-          {photos.length > 0 ? (
-            <>
-              <img
-                src={photos[currentPhoto]}
-                alt={_title}
-                style={{ width: "100%", height: "100%", objectFit: "cover", transition: "opacity 0.6s ease" }}
-                onError={(e) => { e.target.style.display = "none"; }}
-              />
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "60px", background: "linear-gradient(to top, rgba(13,17,23,0.9), transparent)" }} />
-              {photos.length > 1 && (
-                <div style={{ position: "absolute", bottom: "8px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "5px" }}>
-                  {photos.map((_, i) => (
-                    <div key={i} onClick={() => setCurrentPhoto(i)} style={{
-                      width: i === currentPhoto ? "18px" : "6px", height: "6px", borderRadius: "3px",
-                      background: i === currentPhoto ? "#00f2fe" : "rgba(255,255,255,0.4)",
-                      cursor: "pointer", transition: "all 0.3s ease"
-                    }} />
-                  ))}
-                </div>
-              )}
-              <span style={{
-                position: "absolute", top: "10px", right: "10px",
-                background: "rgba(0,0,0,0.6)", color: "#00f2fe",
-                fontSize: "0.7rem", padding: "2px 8px", borderRadius: "20px", backdropFilter: "blur(4px)"
-              }}>📷 {photos.length}</span>
-            </>
-          ) : (
-            <NoPhotosPlaceholder />
-          )}
-
-          {_category && (
-            <span style={{
-              position: "absolute", top: "10px", left: "10px",
-              background: "rgba(0,242,254,0.15)", color: "#00f2fe",
-              border: "1px solid rgba(0,242,254,0.4)",
-              fontSize: "0.7rem", padding: "3px 10px", borderRadius: "20px",
-              backdropFilter: "blur(4px)", fontWeight: "bold", zIndex: 2
-            }}>
-              {categoryIcons[cat] || "📍"} {_category}
-            </span>
-          )}
-        </div>
-
-        {/* ── CUERPO ── */}
-        <div className="p-3 d-flex flex-column" style={{ flex: 1 }}>
-          <div className="d-flex justify-content-between align-items-start mb-2">
-            <h5 className="fw-bold mb-0" style={{ color: "#fff", fontSize: "1rem", lineHeight: "1.3" }}>
-              {_title}
-            </h5>
-            {_date && (
-              <small style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.7rem", whiteSpace: "nowrap", marginLeft: "8px" }}>
-                {_date}
-              </small>
-            )}
-          </div>
-
-          {/* ── MANTENIENDO TU DISEÑO: Autor con Enlace Azul ── */}
-          {showAuthor && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              {avatar ? (
-                <img src={normalizeUrl(avatar)} alt={authorName} style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(255,255,255,0.06)" }} />
-              ) : (
-                <div style={{ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", background: "linear-gradient(135deg,#f9d423,#ff4e50)", color: "#081018", fontWeight: 800 }}>
-                  {authorName ? authorName.charAt(0).toUpperCase() : "A"}
-                </div>
-              )}
-              {/* Estilo ajustado para que sea azul y subrayado */}
-              <Link 
-                to={`/profile/${authorId}`} 
-                style={{ 
-                  color: "#00f2fe", 
-                  fontWeight: "800", 
-                  textDecoration: "underline",
-                  cursor: "pointer"
-                }}
-              >
-                {authorName}
-              </Link>
-            </div>
-          )}
-
-          {_content && (
-            <p style={{
-              color: "rgba(255,255,255,0.5)", fontSize: "0.8rem",
-              marginBottom: "12px", lineHeight: "1.4",
-              display: "-webkit-box", WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical", overflow: "hidden"
-            }}>
-              {_content}
-            </p>
-          )}
-
-          {photos.length > 0 && (
-            <div className="mb-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem" }}>
-              <span>📷 {photos.length} foto{photos.length !== 1 ? "s" : ""}</span>
-            </div>
-          )}
-
-          <div className="d-flex gap-2 mt-auto">
-            <button
-              onClick={handleReadMoreClick}
-              className="btn btn-sm fw-bold rounded-pill flex-grow-1"
+    <div
+      className="h-100 rounded-4 overflow-hidden"
+      style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        transition: "all 0.3s ease",
+        display: "flex", flexDirection: "column"
+      }}
+      onMouseOver={(e) => e.currentTarget.style.border = "1px solid rgba(0,242,254,0.5)"}
+      onMouseOut={(e) => e.currentTarget.style.border = "1px solid rgba(255,255,255,0.08)"}
+    >
+      {/* ── ÁREA DE FOTO ── */}
+      <div style={{ position: "relative", height: "220px", background: "#1a1a2e", overflow: "hidden" }}>
+        {photos.length > 0 ? (
+          <>
+            <img
+              src={photos[currentPhoto]}
+              alt={_title}
               style={{
-                background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-                border: "none", color: "#000", fontSize: "0.8rem"
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                objectPosition: "center center",
+                display: "block",
+                transition: "opacity 0.6s ease"
               }}
-            >
-              📖 Leer más
-            </button>
-
-            {(showActions || onEdit) && (
-              <button
-                onClick={onEdit}
-                className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
-                style={{
-                  background: "rgba(0,242,254,0.1)", color: "#00f2fe",
-                  border: "1px solid rgba(0,242,254,0.3)",
-                  width: "34px", height: "34px", flexShrink: 0
-                }}
-                title="Editar"
-              >✏️</button>
+              onError={(e) => { e.target.style.display = "none"; }}
+            />
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "60px", background: "linear-gradient(to top, rgba(13,17,23,0.9), transparent)" }} />
+            {photos.length > 1 && (
+              <div style={{ position: "absolute", bottom: "8px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "5px" }}>
+                {photos.map((_, i) => (
+                  <div key={i} onClick={() => setCurrentPhoto(i)} style={{
+                    width: i === currentPhoto ? "18px" : "6px", height: "6px", borderRadius: "3px",
+                    background: i === currentPhoto ? "#00f2fe" : "rgba(255,255,255,0.4)",
+                    cursor: "pointer", transition: "all 0.3s ease"
+                  }} />
+                ))}
+              </div>
             )}
+            <span style={{
+              position: "absolute", top: "10px", right: "10px",
+              background: "rgba(0,0,0,0.6)", color: "#00f2fe",
+              fontSize: "0.7rem", padding: "2px 8px", borderRadius: "20px", backdropFilter: "blur(4px)"
+            }}>📷 {photos.length}</span>
+          </>
+        ) : (
+          <NoPhotosPlaceholder />
+        )}
 
-            {(showActions || onDelete) && (
-              <button
-                onClick={onDelete}
-                className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
-                style={{
-                  background: "rgba(220,53,69,0.15)", color: "#ff6b7a",
-                  border: "1px solid rgba(220,53,69,0.4)",
-                  width: "34px", height: "34px", flexShrink: 0
-                }}
-                title="Eliminar"
-              >🗑️</button>
-            )}
-          </div>
-        </div>
+        {_category && (
+          <span style={{
+            position: "absolute", top: "10px", left: "10px",
+            background: "rgba(0,242,254,0.15)", color: "#00f2fe",
+            border: "1px solid rgba(0,242,254,0.4)",
+            fontSize: "0.7rem", padding: "3px 10px", borderRadius: "20px",
+            backdropFilter: "blur(4px)", fontWeight: "bold", zIndex: 2
+          }}>
+            {categoryIcons[cat] || "📍"} {_category}
+          </span>
+        )}
       </div>
 
-      {/*<RegisterPromptModal
-        show={showPrompt}
-        onClose={() => setShowPrompt(false)}
-        onLogin={() => { setShowPrompt(false); navigate("/login"); }}
-        onRegister={() => { setShowPrompt(false); navigate("/register"); }}
-      />*/}
-    </>
+      {/* ── CUERPO ── */}
+      <div className="p-3 d-flex flex-column" style={{ flex: 1 }}>
+        <div className="d-flex justify-content-between align-items-start mb-2">
+          <h5 className="fw-bold mb-0" style={{ color: "#fff", fontSize: "1rem", lineHeight: "1.3" }}>
+            {_title}
+          </h5>
+          {_date && (
+            <small style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.7rem", whiteSpace: "nowrap", marginLeft: "8px" }}>
+              {_date}
+            </small>
+          )}
+        </div>
+
+        {showAuthor && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            {avatar ? (
+              <img src={normalizeUrl(avatar)} alt={authorName} style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(255,255,255,0.06)" }} />
+            ) : (
+              <div style={{ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", background: "linear-gradient(135deg,#f9d423,#ff4e50)", color: "#081018", fontWeight: 800 }}>
+                {authorName ? authorName.charAt(0).toUpperCase() : "A"}
+              </div>
+            )}
+            <Link
+              to={`/profile/${authorId}`}
+              style={{ color: "#00f2fe", fontWeight: "800", textDecoration: "underline", cursor: "pointer" }}
+            >
+              {authorName}
+            </Link>
+          </div>
+        )}
+
+        {_content && (
+          <p style={{
+            color: "rgba(255,255,255,0.5)", fontSize: "0.8rem",
+            marginBottom: "12px", lineHeight: "1.4",
+            display: "-webkit-box", WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical", overflow: "hidden"
+          }}>
+            {_content}
+          </p>
+        )}
+
+        {photos.length > 0 && (
+          <div className="mb-3" style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem" }}>
+            <span>📷 {photos.length} foto{photos.length !== 1 ? "s" : ""}</span>
+          </div>
+        )}
+
+        <div className="d-flex gap-2 mt-auto">
+          <button
+            onClick={handleReadMoreClick}
+            className="btn btn-sm fw-bold rounded-pill flex-grow-1"
+            style={{
+              background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+              border: "none", color: "#000", fontSize: "0.8rem"
+            }}
+          >
+            📖 Leer más
+          </button>
+
+          {(showActions || onEdit) && (
+            <button
+              onClick={onEdit}
+              className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
+              style={{
+                background: "rgba(0,242,254,0.1)", color: "#00f2fe",
+                border: "1px solid rgba(0,242,254,0.3)",
+                width: "34px", height: "34px", flexShrink: 0
+              }}
+              title="Editar"
+            >✏️</button>
+          )}
+
+          {(showActions || onDelete) && (
+            <button
+              onClick={onDelete}
+              className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
+              style={{
+                background: "rgba(220,53,69,0.15)", color: "#ff6b7a",
+                border: "1px solid rgba(220,53,69,0.4)",
+                width: "34px", height: "34px", flexShrink: 0
+              }}
+              title="Eliminar"
+            >🗑️</button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 
