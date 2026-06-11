@@ -22,7 +22,7 @@ const PostDetail = () => {
     const clean = (url) => {
       if (!url || typeof url !== "string") return null;
       if (url.startsWith("/")) return `${API_BASE}${url}`;
-      if (url.includes("localhost")) return `${API_BASE}${new URL(url).pathname}`;
+      if (url.startsWith("http")) return url;
       return url;
     };
 
