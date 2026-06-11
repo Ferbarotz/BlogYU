@@ -20,6 +20,7 @@ import cloudinary.uploader
 import cloudinary.api
 
 def init_cloudinary():
+    """Inicializa Cloudinary leyendo siempre de la variable de entorno más reciente."""
     url = os.environ.get("CLOUDINARY_URL")
     if url:
         cloudinary.config(cloudinary_url=url)
@@ -83,6 +84,35 @@ def admin_required(fn):
 def api_root():
     return jsonify({"msg": "API BlogYU funcionando"}), 200
 
+# ----------------- Diagnóstico Cloudinary -----------------
+@api.route("/test-cloudinary", methods=["GET"])
+def test_cloudinary():
+    url = os.environ.get("CLOUDINARY_URL", "")
+    try:
+        init_cloudinary()
+        cfg = cloudinary.config()
+        ping = cloudinary.api.ping()
+        return jsonify({
+            "ok": True,
+            "status": "Conectado correctamente",
+            "cloud_name": cfg.cloud_name,
+            "url_en_memoria": f"cloudinary://{cfg.api_key}:******@{cfg.cloud_name}",
+            "api_key_last4": str(cfg.api_key)[-4:] if cfg.api_key else None,
+            "api_secret_len": len(str(cfg.api_secret or "")),
+            "ping": ping
+        }), 200
+    except Exception as e:
+        cfg = cloudinary.config()
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "url_detectada_len": len(url),
+            "cloud_name": cfg.cloud_name,
+            "api_key_last4": str(cfg.api_key)[-4:] if cfg.api_key else None,
+            "api_secret_len": len(str(cfg.api_secret or "")),
+            "ayuda": "Si el error es 401, el Secret en Render no es el correcto."
+        }), 500
+
 # ----------------- AUTH -----------------
 @api.route('/login', methods=['POST'])
 def login():
@@ -115,7 +145,6 @@ def login():
             "is_admin": getattr(user, "is_admin", False)
         }
 
-    # Aseguramos que serialize() incluya profile_pic y background aunque el método custom no lo devuelva
     if "profile_pic" not in serialized:
         serialized["profile_pic"] = getattr(user, "profile_pic", None)
     if "background" not in serialized:
@@ -135,7 +164,7 @@ def register():
         return jsonify({"msg": "El usuario ya existe"}), 400
 
     new_user = User(name=name, email=email)
-    new_user.password = password  # asume que el setter del modelo hashea
+    new_user.password = password
     db.session.add(new_user)
     db.session.commit()
     try:
@@ -152,7 +181,6 @@ def forgot_password():
         return jsonify({"msg": "Email requerido"}), 400
 
     user = User.query.filter_by(email=email).first()
-    # No revelar si existe o no
     if not user:
         return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
 
@@ -185,7 +213,7 @@ def reset_password(token=None):
 
     try:
         data = decode_token(token)
-        user_id = data.get('sub') or data.get('identity') or data.get('identity')
+        user_id = data.get('sub') or data.get('identity')
     except Exception as e:
         current_app.logger.exception("Token inválido/expirado")
         return jsonify({"msg": "Token inválido o expirado", "error": str(e)}), 400
@@ -314,10 +342,8 @@ def update_post(post_id):
         p.content = data.get("content", p.content)
         p.category = data.get("category", p.category)
 
-        # IDs de imágenes existentes que el usuario quiere CONSERVAR
         keep_ids = data.get("keep_image_ids", [])
         if keep_ids is not None:
-            # Eliminar las imágenes que NO están en keep_ids
             for img in list(p.images):
                 if img.id not in keep_ids:
                     try:
@@ -328,24 +354,20 @@ def update_post(post_id):
                         pass
                     db.session.delete(img)
 
-        # Agregar nuevas URLs de imágenes
         new_image_urls = data.get("new_images", [])
         current_count = PostImage.query.filter_by(post_id=p.id).count()
         for i, url in enumerate(new_image_urls):
             db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
 
-        # Actualizar imagen principal (primera imagen que quede)
         db.session.flush()
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
         p.image = first_img.url if first_img else None
 
     else:
-        # multipart/form-data
         p.title = request.form.get("title") or p.title
         p.content = request.form.get("content") or p.content
         p.category = request.form.get("category") or p.category
 
-        # IDs a conservar (vienen como JSON string en el form)
         keep_ids_raw = request.form.get("keep_image_ids")
         if keep_ids_raw:
             try:
@@ -363,7 +385,6 @@ def update_post(post_id):
                         pass
                     db.session.delete(img)
 
-        # Subir nuevas fotos
         new_files = [f for f in request.files.getlist('images') if f and f.filename != ""]
         if new_files:
             current_count = PostImage.query.filter_by(post_id=p.id).count()
@@ -374,7 +395,6 @@ def update_post(post_id):
                 if url:
                     db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
 
-        # Actualizar imagen principal
         db.session.flush()
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
         p.image = first_img.url if first_img else p.image
@@ -459,7 +479,6 @@ def get_user(user_id):
         }
     return jsonify(serialized), 200
 
-# --- subir fondo (background) del usuario/profile page ---
 @api.route('/users/<int:user_id>/background', methods=['POST'])
 @jwt_required()
 def upload_user_background(user_id):
@@ -484,7 +503,6 @@ def upload_user_background(user_id):
     if not file_url:
         return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
 
-    # SOLO actualizamos user.background
     try:
         user = User.query.get_or_404(user_id)
         setattr(user, 'background', file_url)
@@ -511,7 +529,6 @@ def upload_user_profile_pic(user_id):
     if current_user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
 
-    # aceptamos varios nombres pero SOLO actualizamos profile_pic
     file_field_candidates = ['profile', 'avatar', 'profile_pic', 'profilePic', 'file']
     image_file = None
     for fname in file_field_candidates:
@@ -533,7 +550,6 @@ def upload_user_profile_pic(user_id):
     if not file_url:
         return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
 
-    # Solo actualizamos profile_pic en el usuario
     try:
         user = User.query.get_or_404(user_id)
         setattr(user, 'profile_pic', file_url)
@@ -549,14 +565,9 @@ def upload_user_profile_pic(user_id):
         serialized = {'id': user.id, 'profile_pic': getattr(user, 'profile_pic', None)}
     return jsonify({"msg": "Avatar actualizado", "profile_pic": file_url, "user": serialized}), 200
 
-
 @api.route('/users/<int:user_id>', methods=['PATCH'])
 @jwt_required()
 def update_user(user_id):
-    """
-    PATCH seguro para /api/users/<id>
-    Acepta JSON con: profileShape | profile_shape, social (obj), name, email
-    """
     try:
         current_user_id = int(get_jwt_identity())
     except Exception:
@@ -569,7 +580,6 @@ def update_user(user_id):
     data = request.get_json(silent=True) or {}
 
     try:
-        # profileShape / profile_shape
         if 'profileShape' in data:
             val = data.get('profileShape')
             if hasattr(user, 'profile_shape'):
@@ -583,7 +593,6 @@ def update_user(user_id):
             else:
                 setattr(user, 'profileShape', val)
 
-        # social merge
         social = data.get('social')
         if isinstance(social, dict):
             if hasattr(user, 'social_twitter') or hasattr(user, 'twitter'):
@@ -617,7 +626,6 @@ def update_user(user_id):
                     existing.setdefault('social', {}).update(social)
                     setattr(user, 'meta', existing)
 
-        # other safe fields
         if 'name' in data and hasattr(user, 'name'):
             user.name = data.get('name')
         if 'email' in data and hasattr(user, 'email'):
@@ -752,22 +760,12 @@ def update_route(route_id):
     if new_steps is not None:
         allowed_types = {"vuelo","aeropuerto","vip","hotel","restaurante","cafe","lugar","transporte","otro"}
 
-        # Obtener pasos actuales de la ruta
         current_steps = RouteStep.query.filter_by(route_id=route.id).all()
-        current_steps_map = {step.id: step for step in current_steps}
-
-        # Para identificar qué pasos conservar y cuáles eliminar
-        # Asumimos que los pasos nuevos no tienen id, así que eliminamos todos los pasos antiguos y creamos nuevos
-        # Si quieres manejar edición de pasos con IDs, habría que modificar el frontend para enviar IDs
-
-        # Por simplicidad, eliminamos pasos e imágenes que no estén en el nuevo payload
-        # Primero, eliminamos todos los pasos e imágenes antiguos
         old_step_ids = [step.id for step in current_steps]
         RouteStepImage.query.filter(RouteStepImage.step_id.in_(old_step_ids)).delete(synchronize_session=False)
         RouteStep.query.filter_by(route_id=route.id).delete()
         db.session.flush()
 
-        # Ahora creamos los pasos nuevos con sus imágenes
         for i, s in enumerate(new_steps):
             step_type = (s.get("type") or "").strip().lower()
             step_title = (s.get("title") or "").strip()
@@ -792,14 +790,10 @@ def update_route(route_id):
             db.session.add(step)
             db.session.flush()
 
-            keep_urls = s.get("keep_image_urls") or []
-            new_urls = s.get("new_images") or []
-
-            for url in keep_urls:
+            for url in (s.get("keep_image_urls") or []):
                 if url:
                     db.session.add(RouteStepImage(url=url, step_id=step.id))
-
-            for url in new_urls:
+            for url in (s.get("new_images") or []):
                 if url:
                     db.session.add(RouteStepImage(url=url, step_id=step.id))
 
@@ -849,7 +843,6 @@ def set_home_background():
         current_app.logger.debug("[bg] instance_path=%s uploads_dir=%s", inst_path, uploads_dir)
         os.makedirs(uploads_dir, exist_ok=True)
 
-        # file upload
         if 'background' in request.files and request.files['background'].filename:
             image_file = request.files['background']
             if image_file.filename == "":
@@ -882,7 +875,6 @@ def set_home_background():
                 return jsonify({"background": file_url, "warning": "No se pudo escribir home_background.json"}), 200
             return jsonify({"background": file_url}), 200
 
-        # json url
         if request.is_json:
             body = request.get_json(silent=True) or {}
             bg_url = body.get('background') or body.get('url')
@@ -901,15 +893,14 @@ def set_home_background():
     except Exception:
         current_app.logger.exception("Error guardando home background")
         return jsonify({"msg": "Error interno", "error": "exception"}), 500
-    
-# ----------------- ADMIN USERS -----------------  
+
+# ----------------- ADMIN USERS -----------------
 @api.route('/admin/users', methods=['GET'])
 @jwt_required()
 @admin_required
 def get_all_users():
     users = User.query.order_by(User.id.asc()).all()
     return jsonify([u.serialize() for u in users]), 200
-
 
 @api.route('/admin/users/<int:user_id>', methods=['DELETE'])
 @jwt_required()
@@ -919,7 +910,6 @@ def admin_delete_user(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({"msg": "Usuario eliminado"}), 200
-
 
 @api.route('/admin/users/<int:user_id>', methods=['PUT'])
 @jwt_required()
@@ -932,13 +922,10 @@ def admin_update_user(user_id):
     db.session.commit()
     return jsonify(user.serialize()), 200
 
-
-
 @api.route('/users/<int:user_id>/public', methods=['GET'])
 def get_user_public(user_id):
     user = User.query.get_or_404(user_id)
 
-    # Construir social desde columnas separadas o campo JSON
     social = {}
     if hasattr(user, 'social') and isinstance(getattr(user, 'social'), dict):
         social = user.social or {}
@@ -957,11 +944,6 @@ def get_user_public(user_id):
         "social": social,
     }), 200
 
-  
-
-import os
-from flask import current_app, jsonify
-
 @api.route('/api/uploads/list', methods=['GET'])
 def list_uploads():
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
@@ -978,8 +960,7 @@ def setup_admin():
     from src.api.models import User
 
     try:
-        target_email = 'ferbarotz@gmail.com'   # ← Admin
-
+        target_email = 'ferbarotz@gmail.com'
         user = User.query.filter_by(email=target_email).first()
 
         if user:
@@ -999,15 +980,3 @@ def setup_admin():
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-@api.route('/test-cloudinary', methods=['GET'])
-def test_cloudinary():
-    import cloudinary
-    import cloudinary.api
-    url = os.environ.get("CLOUDINARY_URL", "NO ENCONTRADA")
-    try:
-        init_cloudinary()
-        ping = cloudinary.api.ping()
-        return jsonify({"ok": True, "url_set": "AQUI" not in url, "ping": ping}), 200
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "url_set": "AQUI" not in url}), 500
