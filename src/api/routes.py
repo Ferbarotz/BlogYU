@@ -409,6 +409,11 @@ def delete_post(post_id):
     p = Post.query.get_or_404(post_id)
     if p.user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
+
+    # 1. Borrar comentarios del post (evita ForeignKeyViolation)
+    Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
+
+    # 2. Borrar imágenes del post
     for img in p.images:
         try:
             old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
@@ -416,6 +421,9 @@ def delete_post(post_id):
                 os.remove(old_path)
         except Exception:
             current_app.logger.exception("Error eliminando archivo imagen")
+    PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
+
+    # 3. Borrar imagen principal si es local
     if p.image:
         try:
             old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(p.image))
@@ -423,6 +431,8 @@ def delete_post(post_id):
                 os.remove(old_path)
         except Exception:
             current_app.logger.exception("Error eliminando imagen principal")
+
+    # 4. Borrar el post
     db.session.delete(p)
     db.session.commit()
     return jsonify({"msg": "Eliminado"}), 200
