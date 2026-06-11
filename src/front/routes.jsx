@@ -1,3 +1,4 @@
+// src/front/routes.jsx
 import React, { Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
@@ -22,95 +23,47 @@ import AdminDashboard from "./pages/AdminDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 export default function AppRoutes() {
-  // Obtener id usuario actual para redirigir /profile sin id (opcional)
-  const currentUser = JSON.parse(localStorage.getItem("user") || "null");
-  const currentUserId = currentUser?.id || "";
-
   return (
     <Suspense fallback={<div>Cargando...</div>}>
       <Routes>
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute adminOnly>
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/" element={<Home />} />
 
-        {/* Auth */}
+        {/* Admin (protegido) */}
+        <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+
+        {/* Públicas */}
+        <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-        {/* Posts */}
+        {/* Posts - públicos */}
         <Route path="/posts" element={<Posts />} />
         <Route path="/posts/:id" element={<PostDetail />} />
 
-        {/* Crear / Editar posts (protegidos) */}
-        <Route
-          path="/new-post"
-          element={
-            <ProtectedRoute>
-              <NewPost />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/edit-post/:id"
-          element={
-            <ProtectedRoute>
-              <EditPost />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Mis posts / rutas (protegidos) */}
-        <Route
-          path="/my-posts"
-          element={
-            <ProtectedRoute>
-              <MyPosts />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/my-routes"
-          element={
-            <ProtectedRoute>
-              <MyRoutes />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Rutas */}
+        {/* Rutas - públicas */}
         <Route path="/create-route" element={<CreateRoute />} />
         <Route path="/route/:id" element={<RouteDetail />} />
         <Route path="/edit-route/:id" element={<EditRoute />} />
 
-        {/* Otras */}
+        {/* Categorías - pública */}
         <Route path="/categories" element={<Categorias />} />
 
-        {/* Perfil con id */}
-        <Route
-          path="/profile/:id"
-          element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          }
-        />
+        {/* Perfil - público */}
+        <Route path="/profile/:id" element={<Profile />} />
+        <Route path="/profile" element={<Navigate to="/" replace />} />
 
-        {/* Redirigir /profile sin id al perfil actual */}
-        <Route
-          path="/profile"
-          element={<Navigate to={`/profile/${currentUserId}`} replace />}
-        />
+        {/* Crear / Editar posts (protegidos) */}
+        <Route path="/new-post" element={<ProtectedRoute><NewPost /></ProtectedRoute>} />
+        <Route path="/edit-post/:id" element={<ProtectedRoute><EditPost /></ProtectedRoute>} />
+
+        {/* Mis posts / rutas (protegidos) */}
+        <Route path="/my-posts" element={<ProtectedRoute><MyPosts /></ProtectedRoute>} />
+        <Route path="/my-routes" element={<ProtectedRoute><MyRoutes /></ProtectedRoute>} />
 
         {/* 404 */}
         <Route path="*" element={<Navigate to="/" replace />} />
+
       </Routes>
     </Suspense>
   );
