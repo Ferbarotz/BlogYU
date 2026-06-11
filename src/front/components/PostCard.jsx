@@ -94,7 +94,7 @@ const PostCard = ({
   showAuthor = true 
 }) => {
   const [currentPhoto, setCurrentPhoto] = useState(0);
-  const [showPrompt, setShowPrompt] = useState(false);
+  //const [showPrompt, setShowPrompt] = useState(false);
   const navigate = useNavigate();
 
   const _title = post?.title ?? title;
@@ -140,14 +140,9 @@ const PostCard = ({
 
   const originalReadHandler = onView ?? onReadMore;
 
-  const handleReadMoreClick = () => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      if (typeof originalReadHandler === "function") originalReadHandler();
-    } else {
-      setShowPrompt(true);
-    }
-  };
+ const handleReadMoreClick = () => {
+  if (typeof originalReadHandler === "function") originalReadHandler();
+};
 
   const { name: authorName, avatar, id: authorId } = getAuthor(post || {});
 
@@ -305,12 +300,12 @@ const PostCard = ({
         </div>
       </div>
 
-      <RegisterPromptModal
+      {/*<RegisterPromptModal
         show={showPrompt}
         onClose={() => setShowPrompt(false)}
         onLogin={() => { setShowPrompt(false); navigate("/login"); }}
         onRegister={() => { setShowPrompt(false); navigate("/register"); }}
-      />
+      />*/}
     </>
   );
 };
