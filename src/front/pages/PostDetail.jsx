@@ -168,7 +168,7 @@ const PostDetail = () => {
                   key={i}
                   src={img}
                   alt={`Miniatura ${i + 1}`}
-                  onClick={() => { setActiveImg(i); openModal(i); }}
+                  onClick={() =>  setActiveImg(i)}
                   style={{
                     width: "80px",
                     height: "60px",
