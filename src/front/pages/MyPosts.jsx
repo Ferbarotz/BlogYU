@@ -1,4 +1,3 @@
-// src/front/pages/MyPosts.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
@@ -21,13 +20,6 @@ const normalizeCategory = (cat) => {
   return "";
 };
 
-const fixImage = (img) => {
-  if (!img) return null;
-  if (typeof img === "string" && img.startsWith("/")) return `${API_BASE}${img}`;
-  return img;
-};
-
-// ── PÁGINA PRINCIPAL ──
 const MyPosts = () => {
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
@@ -63,30 +55,22 @@ const MyPosts = () => {
     const fetchMyPosts = async () => {
       setLoading(true);
 
-      // función de normalización mínima para imágenes y location (no cambia nada más)
       const normalizePostImages = (p) => {
         const clone = { ...p };
-        // Establece images (array) si vienen en distintos formatos
         if (!clone.images) {
           if (clone.photos && Array.isArray(clone.photos)) clone.images = clone.photos;
           else if (clone.image && Array.isArray(clone.image)) clone.images = clone.image;
           else if (clone.image && typeof clone.image === "string") clone.images = [clone.image];
           else clone.images = [];
         }
-        // Normaliza cada URL absoluta
         clone.images = clone.images.map((img) => {
           if (!img) return null;
           const raw = (typeof img === "object") ? (img.url || img.path || img) : img;
           if (typeof raw === "string" && raw.startsWith("/")) return `${API_BASE}${raw}`;
           return raw;
         }).filter(Boolean);
-
-        // También asegúrate de tener clone.image (string) como fallback
         if (!clone.image && clone.images.length > 0) clone.image = clone.images[0];
-
-        // location unificado (si añadiste el campo en backend)
         clone.location = clone.location || clone.place || null;
-
         return clone;
       };
 
@@ -105,14 +89,12 @@ const MyPosts = () => {
           const altData = await alt.json();
           if (!mounted) return;
           const postsArray = Array.isArray(altData) ? altData : altData.posts || [];
-          const normalized = postsArray.map(normalizePostImages);
-          setPosts(normalized);
+          setPosts(postsArray.map(normalizePostImages));
         } else {
           const data = await res.json();
           if (!mounted) return;
           const postsArray = Array.isArray(data) ? data : data.posts || [];
-          const normalized = postsArray.map(normalizePostImages);
-          setPosts(normalized);
+          setPosts(postsArray.map(normalizePostImages));
         }
       } catch (err) {
         console.error("Error cargando mis posts:", err);
@@ -154,8 +136,6 @@ const MyPosts = () => {
 
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh" }}>
-
-      {/* ── HEADER ── */}
       <div className="text-center text-white" style={{
         background: "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)",
         padding: "50px 20px 40px", position: "relative"
@@ -190,10 +170,7 @@ const MyPosts = () => {
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px", background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
       </div>
 
-      {/* ── CONTENIDO ── */}
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
-
-        {/* CATEGORÍAS */}
         <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
           {categories.map(cat => (
             <button
@@ -211,7 +188,6 @@ const MyPosts = () => {
           ))}
         </div>
 
-        {/* TÍTULO SECCIÓN */}
         <div className="d-flex align-items-center mb-4">
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to right, transparent, rgba(0,242,254,0.3))" }} />
           <span className="mx-3 fw-bold text-uppercase" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "3px", fontSize: "0.75rem" }}>
@@ -220,7 +196,6 @@ const MyPosts = () => {
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
         </div>
 
-        {/* LISTADO */}
         {filtered.length === 0 ? (
           <div className="text-center py-5">
             <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>
