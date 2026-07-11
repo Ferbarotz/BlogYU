@@ -131,24 +131,7 @@ const MediaCard = ({
           <NoPhotosPlaceholder accent={accent} />
         )}
 
-        {/* Badges flotantes sobre las fotos */}
-        <span
-          style={{
-            position: "absolute", top: "10px", left: "10px",
-            background: `${accent}26`,
-            color: accent,
-            border: `1px solid ${accent}66`,
-            fontSize: "0.7rem",
-            padding: "3px 10px",
-            borderRadius: "20px",
-            fontWeight: "bold",
-            backdropFilter: "blur(4px)",
-            zIndex: 2,
-          }}
-        >
-          {categoryIcon} {categoryLabel}
-        </span>
-
+        {/* Contador de fotos (único badge) */}
         <span
           style={{
             position: "absolute", top: "10px", right: "10px",
@@ -167,43 +150,103 @@ const MediaCard = ({
 
       {/* ── CUERPO ── */}
       <div className="p-3 d-flex flex-column" style={{ flex: 1 }}>
-        {/* 3. Nombre */}
-        <h5 className="fw-bold mb-2" style={{ color: "#fff", fontSize: "1rem", lineHeight: "1.3" }}>
+        {/* Nombre (altura fija, ellipsis si es largo) */}
+        <h5 
+          className="fw-bold mb-3" 
+          style={{ 
+            color: "#fff", 
+            fontSize: "1rem", 
+            lineHeight: "1.3",
+            height: "2.6rem",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            textOverflow: "ellipsis"
+          }}
+        >
           {title}
         </h5>
 
-        {/* 4. Autor */}
+        {/* Autor */}
         {showAuthor && author && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
             {author.avatar ? (
-              <img src={author.avatar} alt={author.name} style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(255,255,255,0.06)" }} />
+              <img 
+                src={author.avatar} 
+                alt={author.name} 
+                style={{ 
+                  width: "28px", 
+                  height: "28px", 
+                  borderRadius: "50%", 
+                  objectFit: "cover", 
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  flexShrink: 0
+                }} 
+              />
             ) : (
-              <div style={{ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", background: accentGradient, color: "#081018", fontWeight: 800 }}>
+              <div style={{ 
+                width: "28px", 
+                height: "28px", 
+                borderRadius: "50%", 
+                display: "grid", 
+                placeItems: "center", 
+                background: accentGradient, 
+                color: "#081018", 
+                fontWeight: 800,
+                fontSize: "0.75rem",
+                flexShrink: 0
+              }}>
                 {author.name ? author.name.charAt(0).toUpperCase() : "A"}
               </div>
             )}
             {author.id ? (
-              <Link to={`/profile/${author.id}`} style={{ color: accent, fontWeight: 800, textDecoration: "underline", cursor: "pointer", fontSize: "0.82rem" }}>
+              <Link 
+                to={`/profile/${author.id}`} 
+                style={{ 
+                  color: accent, 
+                  fontWeight: 700, 
+                  textDecoration: "none", 
+                  fontSize: "0.85rem",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap"
+                }}
+              >
                 {author.name}
               </Link>
             ) : (
-              <strong style={{ color: accent, fontWeight: 800, fontSize: "0.82rem" }}>{author.name}</strong>
+              <strong style={{ 
+                color: accent, 
+                fontWeight: 700, 
+                fontSize: "0.85rem",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap"
+              }}>{author.name}</strong>
             )}
           </div>
         )}
 
-        {/* 5. Fecha · Ubicación */}
-        <div className="d-flex flex-wrap gap-3 mb-3" style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem" }}>
-          {date && <span>📅 {date}</span>}
-          {location && <span>📍 {location}</span>}
+        {/* Fecha · Ubicación */}
+        <div className="d-flex flex-wrap gap-3 mb-3" style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.75rem", lineHeight: "1.4" }}>
+          {date && <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>📅 {date}</span>}
+          {location && <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>📍 {location}</span>}
         </div>
 
-        {/* 6. Ver detalle · Editar · Borrar */}
+        {/* Botones de acción */}
         <div className="d-flex gap-2 mt-auto">
           <button
             onClick={handleView}
             className="btn btn-sm fw-bold rounded-pill flex-grow-1"
-            style={{ background: accentGradient, border: "none", color: "#000", fontSize: "0.8rem" }}
+            style={{ 
+              background: accentGradient, 
+              border: "none", 
+              color: "#000", 
+              fontSize: "0.8rem",
+              padding: "6px 16px",
+              height: "34px"
+            }}
           >
             📖 Ver detalle
           </button>
@@ -213,9 +256,14 @@ const MediaCard = ({
               onClick={onEdit}
               className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
               style={{
-                background: `${accent}1a`, color: accent,
+                background: `${accent}1a`, 
+                color: accent,
                 border: `1px solid ${accent}4d`,
-                width: "34px", height: "34px", flexShrink: 0
+                width: "34px", 
+                height: "34px", 
+                flexShrink: 0,
+                padding: 0,
+                fontSize: "0.9rem"
               }}
               title="Editar"
             >✏️</button>
@@ -226,9 +274,14 @@ const MediaCard = ({
               onClick={onDelete}
               className="btn btn-sm rounded-circle d-flex align-items-center justify-content-center"
               style={{
-                background: "rgba(220,53,69,0.15)", color: "#ff6b7a",
+                background: "rgba(220,53,69,0.15)", 
+                color: "#ff6b7a",
                 border: "1px solid rgba(220,53,69,0.4)",
-                width: "34px", height: "34px", flexShrink: 0
+                width: "34px", 
+                height: "34px", 
+                flexShrink: 0,
+                padding: 0,
+                fontSize: "0.9rem"
               }}
               title="Eliminar"
             >🗑️</button>
