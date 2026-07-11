@@ -97,45 +97,8 @@ const MediaCard = ({
       onMouseOver={(e) => (e.currentTarget.style.border = `1px solid ${accent}80`)}
       onMouseOut={(e) => (e.currentTarget.style.border = "1px solid rgba(255,255,255,0.08)")}
     >
-      {/* ── 1. CABECERA: categoría (izq) + nº fotos (der) ── */}
-      <div
-        className="d-flex justify-content-between align-items-center"
-        style={{
-          padding: "10px 12px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        <span
-          style={{
-            background: `${accent}26`,
-            color: accent,
-            border: `1px solid ${accent}66`,
-            fontSize: "0.72rem",
-            padding: "3px 10px",
-            borderRadius: "20px",
-            fontWeight: "bold",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {categoryIcon} {categoryLabel}
-        </span>
-
-        <span
-          style={{
-            background: "rgba(0,0,0,0.5)",
-            color: accent,
-            fontSize: "0.72rem",
-            padding: "3px 10px",
-            borderRadius: "20px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          📷 {photos.length}
-        </span>
-      </div>
-
-      {/* ── 2. FOTOS ── */}
-      <div style={{ position: "relative", height: "200px", background: "#1a1a2e", overflow: "hidden" }}>
+      {/* ── FOTOS con badges flotantes ── */}
+      <div style={{ position: "relative", height: "220px", background: "#1a1a2e", overflow: "hidden" }}>
         {photos.length > 0 ? (
           <>
             <img
@@ -167,6 +130,39 @@ const MediaCard = ({
         ) : (
           <NoPhotosPlaceholder accent={accent} />
         )}
+
+        {/* Badges flotantes sobre las fotos */}
+        <span
+          style={{
+            position: "absolute", top: "10px", left: "10px",
+            background: `${accent}26`,
+            color: accent,
+            border: `1px solid ${accent}66`,
+            fontSize: "0.7rem",
+            padding: "3px 10px",
+            borderRadius: "20px",
+            fontWeight: "bold",
+            backdropFilter: "blur(4px)",
+            zIndex: 2,
+          }}
+        >
+          {categoryIcon} {categoryLabel}
+        </span>
+
+        <span
+          style={{
+            position: "absolute", top: "10px", right: "10px",
+            background: "rgba(0,0,0,0.6)",
+            color: accent,
+            fontSize: "0.7rem",
+            padding: "2px 8px",
+            borderRadius: "20px",
+            backdropFilter: "blur(4px)",
+            zIndex: 2,
+          }}
+        >
+          📷 {photos.length}
+        </span>
       </div>
 
       {/* ── CUERPO ── */}
