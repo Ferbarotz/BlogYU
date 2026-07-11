@@ -440,14 +440,29 @@ def delete_post(post_id):
 # ----------------- CATEGORIES -----------------
 @api.route('/categories', methods=['GET'])
 def get_categories():
-    categories = [
-        {"id": "hoteles",      "name": "Hoteles"},
+    base_categories = [
+        {"id": "hoteles", "name": "Hoteles"},
         {"id": "restaurantes", "name": "Restaurantes"},
-        {"id": "bares",        "name": "Bares"},
-        {"id": "lugares",      "name": "Lugares / Sitios"},
-        {"id": "cultura",      "name": "Cultura / Museos"},
-        {"id": "otros",        "name": "Otros"}
+        {"id": "bares", "name": "Bares"},
+        {"id": "lugares", "name": "Lugares / Sitios"},
+        {"id": "cultura", "name": "Cultura / Museos"},
+        {"id": "otros", "name": "Otros"}
     ]
+
+    counts = {
+        (row[0] or "").strip().lower(): int(row[1] or 0)
+        for row in db.session.query(Post.category, db.func.count(Post.id)).group_by(Post.category).all()
+        if row[0]
+    }
+
+    categories = [
+        {
+            **cat,
+            "post_count": counts.get(cat["id"], 0)
+        }
+        for cat in base_categories
+    ]
+
     return jsonify(categories), 200
 
 # ----------------- COMMENTS -----------------

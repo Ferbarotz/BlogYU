@@ -4,15 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
 import { compressImage } from "../utils/imageCompression";
 import UploadProgress from "../components/UploadProgress";
+import { CATEGORIES, mergeCategoryData, getCategoryMeta } from "../utils/categories";
 
-const DEFAULT_CATEGORIES = [
-  { id: "hoteles",      name: "🏨 Hoteles" },
-  { id: "restaurantes", name: "🍽️ Restaurantes" },
-  { id: "bares",        name: "🍹 Bares" },
-  { id: "lugares",      name: "📍 Lugares / Sitios" },
-  { id: "cultura",      name: "🏛️ Cultura / Museos" },
-  { id: "otros",        name: "✨ Otros" }
-];
+const DEFAULT_CATEGORIES = CATEGORIES;
 
 const MAX_PHOTOS = 10;
 
@@ -22,7 +16,7 @@ const NewPost = () => {
   const [content, setContent]       = useState("");
   const [imageFiles, setImageFiles] = useState([]);
   const [previews, setPreviews]     = useState([]);
-  const [category, setCategory]     = useState(DEFAULT_CATEGORIES[0].id);
+  const [category, setCategory]     = useState(DEFAULT_CATEGORIES[0]?.id || "otros");
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState(null);
@@ -38,13 +32,9 @@ const NewPost = () => {
         const data = await res.json();
         if (!mounted) return;
         if (Array.isArray(data) && data.length > 0) {
-          const normalized = data.map(c =>
-            typeof c === "string"
-              ? { id: c, name: c }
-              : { id: c.id ?? c.name, name: c.name ?? c.id }
-          );
+          const normalized = mergeCategoryData(data);
           setCategories(normalized);
-          setCategory(normalized[0].id);
+          setCategory((prev) => prev || normalized[0]?.id || "otros");
         }
       } catch {
         setCategories(DEFAULT_CATEGORIES);
@@ -203,23 +193,48 @@ const NewPost = () => {
               Categoría *
             </label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-              {categories.map(c => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setCategory(c.id)}
-                  style={{
-                    padding: "8px 18px", borderRadius: "20px", fontSize: "0.82rem",
-                    cursor: "pointer", transition: "all 0.2s",
-                    background: category === c.id ? "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)" : "transparent",
-                    border: category === c.id ? "none" : "1px solid rgba(255,255,255,0.12)",
-                    color: category === c.id ? "#000" : "rgba(255,255,255,0.65)",
-                    fontWeight: category === c.id ? "700" : "500"
-                  }}
-                >
-                  {c.name}
-                </button>
-              ))}
+              {categories.map((c) => {
+                const meta = getCategoryMeta(c.id);
+                const isActive = category === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCategory(c.id)}
+                    className="d-inline-flex align-items-center gap-2"
+                    style={{
+                      padding: "9px 14px",
+                      borderRadius: "14px",
+                      fontSize: "0.82rem",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                      background: isActive ? `${meta.color}22` : "rgba(255,255,255,0.03)",
+                      border: `1px solid ${isActive ? meta.color : "rgba(255,255,255,0.12)"}`,
+                      color: isActive ? "#fff" : "rgba(255,255,255,0.72)",
+                      fontWeight: isActive ? "700" : "500",
+                      boxShadow: isActive ? `0 6px 18px ${meta.color}55` : "none"
+                    }}
+                    title={meta.description}
+                  >
+                    <span
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: "50%",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: meta.color,
+                        color: "#fff",
+                        fontSize: "0.75rem"
+                      }}
+                    >
+                      <i className={`bi ${meta.icon}`} />
+                    </span>
+                    <span>{meta.name}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
