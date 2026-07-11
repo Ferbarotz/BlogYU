@@ -4,40 +4,14 @@ import { useNavigate, useLocation } from "react-router-dom";
 import PostCard from "../components/PostCard";
 import RouteCard from "../components/RouteCard";
 import { API_BASE } from "../api/backend";
-
-const MAIN_CATEGORIES = [
-  { id: "todos",        name: "🌍 Todos" },
-  { id: "hoteles",      name: "🏨 Hoteles" },
-  { id: "restaurantes", name: "🍽️ Restaurantes" },
-  { id: "cultura",      name: "🎭 Cultura" },
-];
-
-const OTHER_CATEGORIES = [
-  { id: "bares",          name: "🍹 Bares" },
-  { id: "cafeterias",     name: "☕ Cafeterías" },
-  { id: "comida-callejera", name: "🌮 Comida callejera" },
-  { id: "lugares",        name: "📍 Lugares / Sitios" },
-  { id: "monumentos",     name: "🏛️ Monumentos" },
-  { id: "naturaleza",     name: "🌳 Naturaleza" },
-  { id: "playas",         name: "🏖️ Playas" },
-  { id: "montana",        name: "🏔️ Montaña" },
-  { id: "ocio",           name: "🎡 Ocio" },
-  { id: "eventos",        name: "🎵 Eventos" },
-  { id: "compras",        name: "🛍️ Compras" },
-  { id: "rutas",          name: "🚶 Rutas a pie" },
-  { id: "vida-nocturna",  name: "🌙 Vida nocturna" },
-  { id: "fotografia",     name: "📸 Fotografía" },
-  { id: "camping",        name: "🏕️ Camping" },
-  { id: "familiar",       name: "👨‍👩‍👧‍👦 Familiar" },
-  { id: "economico",      name: "💰 Económico" },
-  { id: "otros",          name: "✨ Otros" },
-];
+import { mergeCategoryData, getCategoryFilters, normalizeCategoryId } from "../utils/categories";
 
 const Home = () => {
   const [feed, setFeed] = useState([]);
   const [filteredFeed, setFilteredFeed] = useState([]);
   const [activeCategory, setActiveCategory] = useState("todos");
   const [loading, setLoading] = useState(true);
+  const [availableCategories, setAvailableCategories] = useState(getCategoryFilters());
 
   const [globalHomeBg, setGlobalHomeBg] = useState(null);
   const [adminEditing, setAdminEditing] = useState(false);
@@ -178,8 +152,22 @@ const Home = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const categoryParam = params.get("category");
-    setActiveCategory(categoryParam ? categoryParam.toLowerCase() : "todos");
+    setActiveCategory(categoryParam ? normalizeCategoryId(categoryParam) : "todos");
   }, [location.search]);
+
+  useEffect(() => {
+    const categoriesInPosts = Array.from(
+      new Set(
+        feed
+          .filter((item) => item.type === "post")
+          .map((item) => normalizeCategoryId(item.category))
+          .filter(Boolean)
+      )
+    ).map((id) => ({ id, post_count: feed.filter((item) => item.type === "post" && normalizeCategoryId(item.category) === id).length }));
+
+    const merged = mergeCategoryData(categoriesInPosts);
+    setAvailableCategories(getCategoryFilters(merged));
+  }, [feed]);
 
   useEffect(() => {
     if (activeCategory === "todos") {
@@ -188,7 +176,7 @@ const Home = () => {
       setFilteredFeed(
         feed.filter((item) => {
           if (item.type === "route") return false;
-          const cat = item.category ? item.category.toString().toLowerCase() : "";
+          const cat = normalizeCategoryId(item.category);
           return cat === activeCategory;
         })
       );
@@ -661,30 +649,37 @@ const Home = () => {
 
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
         <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() =>
-                cat.id === "todos" ? navigate("/") : navigate(`/?category=${cat.id}`)
-              }
-              className="btn rounded-pill px-4 fw-bold"
-              style={
-                activeCategory === cat.id
-                  ? {
-                      background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-                      border: "none",
-                      color: "#000"
-                    }
-                  : {
-                      background: "transparent",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      color: "rgba(255,255,255,0.7)"
-                    }
-              }
-            >
-              {cat.name}
-            </button>
-          ))}
+          {availableCategories.map((cat) => {
+            const isActive = activeCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() =>
+                  cat.id === "todos" ? navigate("/") : navigate(`/?category=${cat.id}`)
+                }
+                className="btn rounded-pill px-3 py-2 fw-bold d-inline-flex align-items-center gap-2"
+                style={
+                  isActive
+                    ? {
+                        background: cat.id === "todos"
+                          ? "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)"
+                          : `linear-gradient(135deg, ${cat.color || "#4facfe"} 0%, #ffffff22 100%)`,
+                        border: "none",
+                        color: "#fff",
+                        boxShadow: `0 8px 18px ${(cat.color || "#00f2fe")}55`
+                      }
+                    : {
+                        background: "rgba(255,255,255,0.03)",
+                        border: `1px solid ${(cat.color || "#ffffff") }55`,
+                        color: "rgba(255,255,255,0.84)"
+                      }
+                }
+              >
+                <i className={`bi ${cat.icon || "bi-tag"}`} />
+                <span>{cat.name}</span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="d-flex align-items-center mb-4">
@@ -703,7 +698,7 @@ const Home = () => {
               fontSize: "0.75rem"
             }}
           >
-            {activeCategory === "todos" ? "Todos los destinos" : `Destinos · ${activeCategory}`}
+            {activeCategory === "todos" ? "Todos los destinos" : `Destinos · ${availableCategories.find((c) => c.id === activeCategory)?.name || activeCategory}`}
           </span>
           <div
             style={{

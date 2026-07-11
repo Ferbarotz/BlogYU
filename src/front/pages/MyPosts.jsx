@@ -2,16 +2,9 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
 import PostCard from "../components/PostCard";
+import { getCategoryFilters, mergeCategoryData, getCategoryMeta } from "../utils/categories";
 
-const DEFAULT_CATEGORIES = [
-  { id: "todos", name: "🌍 Todos" },
-  { id: "hoteles", name: "🏨 Hoteles" },
-  { id: "restaurantes", name: "🍽️ Restaurantes" },
-  { id: "bares", name: "🍹 Bares" },
-  { id: "lugares", name: "📍 Lugares" },
-  { id: "cultura", name: "🎭 Cultura" },
-  { id: "otros", name: "✨ Otros" }
-];
+const DEFAULT_CATEGORIES = getCategoryFilters();
 
 const normalizeCategory = (cat) => {
   if (!cat) return "";
@@ -37,9 +30,7 @@ const MyPosts = () => {
         const data = await res.json();
         if (!mounted) return;
         if (Array.isArray(data) && data.length) {
-          const normalized = [{ id: "todos", name: "🌍 Todos" }].concat(
-            data.map(c => (typeof c === "string" ? { id: c, name: c } : { id: c.id ?? c.name, name: c.name ?? c.id }))
-          );
+          const normalized = getCategoryFilters(mergeCategoryData(data));
           setCategories(normalized);
         }
       } catch (e) {
@@ -172,26 +163,42 @@ const MyPosts = () => {
 
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
         <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className="btn rounded-pill px-4 fw-bold"
-              style={
-                activeCategory === cat.id
-                  ? { background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000", boxShadow: "0 0 15px rgba(0, 242, 254, 0.4)" }
-                  : { background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)" }
-              }
-            >
-              {cat.name}
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const meta = getCategoryMeta(cat.id);
+            const isActive = activeCategory === cat.id;
+            const color = cat.id === "todos" ? "#00f2fe" : (cat.color || meta.color);
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className="btn rounded-pill px-3 py-2 fw-bold d-inline-flex align-items-center gap-2"
+                style={
+                  isActive
+                    ? {
+                        background: `${color}22`,
+                        border: `1px solid ${color}`,
+                        color: "#fff",
+                        boxShadow: `0 0 16px ${color}66`
+                      }
+                    : {
+                        background: "rgba(255,255,255,0.02)",
+                        border: `1px solid ${color}66`,
+                        color: "rgba(255,255,255,0.8)"
+                      }
+                }
+                title={meta.description}
+              >
+                <i className={`bi ${cat.icon || meta.icon || "bi-tag"}`} />
+                <span>{cat.name}</span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="d-flex align-items-center mb-4">
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to right, transparent, rgba(0,242,254,0.3))" }} />
           <span className="mx-3 fw-bold text-uppercase" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "3px", fontSize: "0.75rem" }}>
-            {activeCategory === "todos" ? "Todas mis publicaciones" : `Mis posts · ${activeCategory}`}
+            {activeCategory === "todos" ? "Todas mis publicaciones" : `Mis posts · ${categories.find((c) => c.id === activeCategory)?.name || activeCategory}`}
           </span>
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
         </div>
