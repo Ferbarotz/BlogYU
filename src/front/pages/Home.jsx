@@ -4,14 +4,12 @@ import { useNavigate, useLocation } from "react-router-dom";
 import PostCard from "../components/PostCard";
 import RouteCard from "../components/RouteCard";
 import { API_BASE } from "../api/backend";
-import { mergeCategoryData, getCategoryFilters, normalizeCategoryId } from "../utils/categories";
 
 const Home = () => {
   const [feed, setFeed] = useState([]);
   const [filteredFeed, setFilteredFeed] = useState([]);
-  const [activeCategory, setActiveCategory] = useState("todos");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
-  const [availableCategories, setAvailableCategories] = useState(getCategoryFilters());
 
   const [globalHomeBg, setGlobalHomeBg] = useState(null);
   const [adminEditing, setAdminEditing] = useState(false);
@@ -149,39 +147,36 @@ const Home = () => {
     };
   }, []);
 
+  // Búsqueda en tiempo real
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const categoryParam = params.get("category");
-    setActiveCategory(categoryParam ? normalizeCategoryId(categoryParam) : "todos");
-  }, [location.search]);
-
-  useEffect(() => {
-    const categoriesInPosts = Array.from(
-      new Set(
-        feed
-          .filter((item) => item.type === "post")
-          .map((item) => normalizeCategoryId(item.category))
-          .filter(Boolean)
-      )
-    ).map((id) => ({ id, post_count: feed.filter((item) => item.type === "post" && normalizeCategoryId(item.category) === id).length }));
-
-    const merged = mergeCategoryData(categoriesInPosts);
-    setAvailableCategories(getCategoryFilters(merged));
-  }, [feed]);
-
-  useEffect(() => {
-    if (activeCategory === "todos") {
+    if (!searchQuery.trim()) {
       setFilteredFeed(feed);
-    } else {
-      setFilteredFeed(
-        feed.filter((item) => {
-          if (item.type === "route") return false;
-          const cat = normalizeCategoryId(item.category);
-          return cat === activeCategory;
-        })
-      );
+      return;
     }
-  }, [activeCategory, feed]);
+
+    const query = searchQuery.toLowerCase().trim();
+    const filtered = feed.filter((item) => {
+      // Buscar en título (posts y rutas)
+      if (item.title && item.title.toLowerCase().includes(query)) return true;
+
+      // Buscar en contenido (posts)
+      if (item.type === "post" && item.content && item.content.toLowerCase().includes(query)) return true;
+
+      // Buscar en descripción y destino (rutas)
+      if (item.type === "route") {
+        if (item.description && item.description.toLowerCase().includes(query)) return true;
+        if (item.destination && item.destination.toLowerCase().includes(query)) return true;
+      }
+
+      // Buscar en nombre de autor
+      const authorName = item.author?.name || item.user?.name || item.user_name || "";
+      if (authorName.toLowerCase().includes(query)) return true;
+
+      return false;
+    });
+
+    setFilteredFeed(filtered);
+  }, [searchQuery, feed]);
 
   useEffect(() => {
     try {
@@ -648,40 +643,86 @@ const Home = () => {
       )}
 
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
-        <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
-          {availableCategories.map((cat) => {
-            const isActive = activeCategory === cat.id;
-            return (
+        {/* Buscador */}
+        <div className="d-flex justify-content-center mb-5">
+          <div style={{ 
+            position: "relative", 
+            width: "100%", 
+            maxWidth: "600px" 
+          }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar por título, destino, autor..."
+              className="form-control"
+              style={{
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: "50px",
+                padding: "14px 24px 14px 52px",
+                color: "#fff",
+                fontSize: "1rem",
+                transition: "all 0.3s ease",
+                boxShadow: searchQuery ? "0 8px 24px rgba(0,242,254,0.2)" : "none"
+              }}
+              onFocus={(e) => {
+                e.target.style.border = "1px solid rgba(0,242,254,0.5)";
+                e.target.style.background = "rgba(255,255,255,0.06)";
+              }}
+              onBlur={(e) => {
+                e.target.style.border = "1px solid rgba(255,255,255,0.1)";
+                e.target.style.background = "rgba(255,255,255,0.04)";
+              }}
+            />
+            <span style={{
+              position: "absolute",
+              left: "20px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              fontSize: "1.2rem",
+              color: searchQuery ? "#00f2fe" : "rgba(255,255,255,0.4)",
+              transition: "color 0.3s ease"
+            }}>
+              🔍
+            </span>
+            {searchQuery && (
               <button
-                key={cat.id}
-                onClick={() =>
-                  cat.id === "todos" ? navigate("/") : navigate(`/?category=${cat.id}`)
-                }
-                className="btn rounded-pill px-3 py-2 fw-bold d-inline-flex align-items-center gap-2"
-                style={
-                  isActive
-                    ? {
-                        background: cat.id === "todos"
-                          ? "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)"
-                          : `linear-gradient(135deg, ${cat.color || "#4facfe"} 0%, #ffffff22 100%)`,
-                        border: "none",
-                        color: "#fff",
-                        boxShadow: `0 8px 18px ${(cat.color || "#00f2fe")}55`
-                      }
-                    : {
-                        background: "rgba(255,255,255,0.03)",
-                        border: `1px solid ${(cat.color || "#ffffff") }55`,
-                        color: "rgba(255,255,255,0.84)"
-                      }
-                }
+                onClick={() => setSearchQuery("")}
+                style={{
+                  position: "absolute",
+                  right: "16px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "rgba(255,255,255,0.1)",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: "28px",
+                  height: "28px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "rgba(255,255,255,0.6)",
+                  cursor: "pointer",
+                  fontSize: "0.9rem",
+                  transition: "all 0.2s ease"
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.2)";
+                  e.currentTarget.style.color = "#fff";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+                  e.currentTarget.style.color = "rgba(255,255,255,0.6)";
+                }}
               >
-                <i className={`bi ${cat.icon || "bi-tag"}`} />
-                <span>{cat.name}</span>
+                ✕
               </button>
-            );
-          })}
+            )}
+          </div>
         </div>
 
+        {/* Título de resultados */}
         <div className="d-flex align-items-center mb-4">
           <div
             style={{
@@ -698,7 +739,10 @@ const Home = () => {
               fontSize: "0.75rem"
             }}
           >
-            {activeCategory === "todos" ? "Todos los destinos" : `Destinos · ${availableCategories.find((c) => c.id === activeCategory)?.name || activeCategory}`}
+            {searchQuery 
+              ? `${filteredFeed.length} resultado${filteredFeed.length !== 1 ? "s" : ""} para "${searchQuery}"`
+              : "Todos los destinos"
+            }
           </span>
           <div
             style={{
@@ -712,9 +756,28 @@ const Home = () => {
         <div className="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
           {filteredFeed.length === 0 ? (
             <div className="col-12 text-center py-5">
+              <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🔍</div>
               <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>
-                No hay publicaciones en "{activeCategory}" todavía.
+                {searchQuery 
+                  ? `No se encontraron resultados para "${searchQuery}"`
+                  : loading ? "Cargando..." : "No hay publicaciones todavía"
+                }
               </p>
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery("")}
+                  className="btn btn-sm rounded-pill mt-3"
+                  style={{
+                    background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                    border: "none",
+                    color: "#000",
+                    padding: "8px 24px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  Ver todo
+                </button>
+              )}
             </div>
           ) : (
             filteredFeed.map((item) => (
