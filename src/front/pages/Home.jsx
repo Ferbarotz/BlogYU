@@ -5,13 +5,32 @@ import PostCard from "../components/PostCard";
 import RouteCard from "../components/RouteCard";
 import { API_BASE } from "../api/backend";
 
-const CATEGORIES = [
-  { id: "todos", name: "🌍 Todos" },
-  { id: "hoteles", name: "🏨 Hoteles" },
+const MAIN_CATEGORIES = [
+  { id: "todos",        name: "🌍 Todos" },
+  { id: "hoteles",      name: "🏨 Hoteles" },
   { id: "restaurantes", name: "🍽️ Restaurantes" },
-  { id: "bares", name: "🍹 Bares" },
-  { id: "lugares", name: "📍 Lugares" },
-  { id: "cultura", name: "🎭 Cultura" },
+  { id: "cultura",      name: "🎭 Cultura" },
+];
+
+const OTHER_CATEGORIES = [
+  { id: "bares",          name: "🍹 Bares" },
+  { id: "cafeterias",     name: "☕ Cafeterías" },
+  { id: "comida-callejera", name: "🌮 Comida callejera" },
+  { id: "lugares",        name: "📍 Lugares / Sitios" },
+  { id: "monumentos",     name: "🏛️ Monumentos" },
+  { id: "naturaleza",     name: "🌳 Naturaleza" },
+  { id: "playas",         name: "🏖️ Playas" },
+  { id: "montana",        name: "🏔️ Montaña" },
+  { id: "ocio",           name: "🎡 Ocio" },
+  { id: "eventos",        name: "🎵 Eventos" },
+  { id: "compras",        name: "🛍️ Compras" },
+  { id: "rutas",          name: "🚶 Rutas a pie" },
+  { id: "vida-nocturna",  name: "🌙 Vida nocturna" },
+  { id: "fotografia",     name: "📸 Fotografía" },
+  { id: "camping",        name: "🏕️ Camping" },
+  { id: "familiar",       name: "👨‍👩‍👧‍👦 Familiar" },
+  { id: "economico",      name: "💰 Económico" },
+  { id: "otros",          name: "✨ Otros" },
 ];
 
 const Home = () => {
