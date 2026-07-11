@@ -1,8 +1,7 @@
 // src/front/components/RouteCard.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { API_BASE } from "../api/backend";
-import RegisterPromptModal from "./RegisterPromptModal";
 
 // Helpers locales
 const makeAbsolute = (url) => {
@@ -46,8 +45,6 @@ const getAuthor = (r = {}) => {
 
 const RouteCard = ({ route = {}, onView, maxPhotos = 6 }) => {
   const [currentPhoto, setCurrentPhoto] = useState(0);
-  const [showPrompt, setShowPrompt] = useState(false);
-  const navigate = useNavigate();
 
   // Recolecta imágenes desde distintos campos que tu API puede devolver (sin recortar)
   const collectRawImages = () => {
@@ -99,12 +96,7 @@ const RouteCard = ({ route = {}, onView, maxPhotos = 6 }) => {
   const { name: authorName, avatar, id: authorId } = getAuthor(route || {});
 
   const handleViewClick = () => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      if (typeof onView === "function") onView();
-    } else {
-      setShowPrompt(true);
-    }
+    if (typeof onView === "function") onView();
   };
 
   return (
@@ -236,13 +228,6 @@ const RouteCard = ({ route = {}, onView, maxPhotos = 6 }) => {
           </div>
         </div>
       </div>
-
-      <RegisterPromptModal
-        show={showPrompt}
-        onClose={() => setShowPrompt(false)}
-        onLogin={() => { setShowPrompt(false); navigate("/login"); }}
-        onRegister={() => { setShowPrompt(false); navigate("/register"); }}
-      />
     </>
   );
 };
