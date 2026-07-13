@@ -118,9 +118,34 @@ const RouteDetail = () => {
       <div className="text-center">
         <p style={{ fontSize: "3rem", color: "#f9d423" }}>😕</p>
         <h4 style={{ color: "#ff6b35" }}>{error}</h4>
-        <button onClick={() => navigate('/my-routes')} className="btn mt-3" style={{ background: "linear-gradient(135deg, #f9d423 0%, #ff6b35 100%)", color: "#fff", border: "none", borderRadius: "10px" }}>
-          ← Volver a mis rutas
-        </button>
+        <div className="d-flex gap-2 justify-content-center mt-3 flex-wrap">
+          <button
+            onClick={() => navigate('/my-routes')}
+            className="btn"
+            style={{
+              background: "linear-gradient(135deg, #f9d423 0%, #ff6b35 100%)",
+              color: "#000",
+              border: "none",
+              borderRadius: "10px",
+              fontWeight: 700
+            }}
+          >
+            ← Mis rutas
+          </button>
+          <button
+            onClick={() => navigate('/')}
+            className="btn"
+            style={{
+              background: "transparent",
+              color: "#f9d423",
+              border: "1px solid rgba(249,212,35,0.35)",
+              borderRadius: "10px",
+              fontWeight: 600
+            }}
+          >
+            🏠 Ir al Home
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -182,7 +207,7 @@ const RouteDetail = () => {
       <div style={{
         margin: 0,
         paddingTop: '20px',
-        paddingBottom: '40px',
+        paddingBottom: '120px',
         paddingLeft: '1rem',
         paddingRight: '1rem',
         background: "#0d1117",
@@ -190,23 +215,6 @@ const RouteDetail = () => {
         minHeight: "100vh",
       }}>
         <div className="route-detail-container container" style={{ maxWidth: "1200px", marginTop: 0, paddingTop: 0 }}>
-          <button
-            onClick={() => navigate('/my-routes')}
-            style={{ 
-              background: "transparent", 
-              border: "none", 
-              color: "#f9d423", 
-              cursor: "pointer", 
-              marginBottom: "20px", 
-              padding: "8px 0", 
-              fontSize: "0.9rem",
-              transition: "all 0.2s ease"
-            }}
-            onMouseOver={e => e.currentTarget.style.transform = "translateX(-5px)"}
-            onMouseOut={e => e.currentTarget.style.transform = "translateX(0)"}
-          >
-            ← Volver a mis rutas
-          </button>
 
           {/* HEADER CON HERO */}
           <div className="mb-4" style={{ 
@@ -243,7 +251,7 @@ const RouteDetail = () => {
 
               {/* Stats Cards */}
               <div className="row g-3 mb-4">
-                <div className="col-6 col-md-3">
+                <div className="col-6 col-md-4">
                   <div style={{
                     background: "rgba(249,212,35,0.1)",
                     border: "1px solid rgba(249,212,35,0.3)",
@@ -259,7 +267,7 @@ const RouteDetail = () => {
                   </div>
                 </div>
 
-                <div className="col-6 col-md-3">
+                <div className="col-6 col-md-4">
                   <div style={{
                     background: "rgba(255,107,53,0.1)",
                     border: "1px solid rgba(255,107,53,0.3)",
@@ -275,7 +283,7 @@ const RouteDetail = () => {
                   </div>
                 </div>
 
-                <div className="col-6 col-md-3">
+                <div className="col-12 col-md-4">
                   <div style={{
                     background: "rgba(249,212,35,0.1)",
                     border: "1px solid rgba(249,212,35,0.3)",
@@ -288,25 +296,7 @@ const RouteDetail = () => {
                       {route.created_at ? new Date(route.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
-                      Publicado
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-6 col-md-3">
-                  <div style={{
-                    background: "rgba(255,107,53,0.1)",
-                    border: "1px solid rgba(255,107,53,0.3)",
-                    borderRadius: "16px",
-                    padding: "16px",
-                    textAlign: "center"
-                  }}>
-                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>✨</div>
-                    <div style={{ fontSize: "0.9rem", fontWeight: "600", color: "#ff6b35", lineHeight: "1.3" }}>
-                      {route.budget || 'No definido'}
-                    </div>
-                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
-                      Presupuesto
+                      Compartida
                     </div>
                   </div>
                 </div>
@@ -689,6 +679,53 @@ const RouteDetail = () => {
                 <p>Esta ruta no tiene experiencias registradas</p>
               </div>
             )}
+          </div>
+
+          {/* Barra de navegación fija */}
+          <div style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "16px",
+            transform: "translateX(-50%)",
+            width: "min(680px, calc(100% - 24px))",
+            zIndex: 1200,
+            background: "rgba(13,17,23,0.88)",
+            border: "1px solid rgba(249,212,35,0.25)",
+            borderRadius: "16px",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+            padding: "10px",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.35)"
+          }}>
+            <div className="d-flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => navigate('/my-routes')}
+                className="btn fw-bold rounded-pill flex-grow-1"
+                style={{
+                  background: "rgba(249,212,35,0.12)",
+                  border: "1px solid rgba(249,212,35,0.45)",
+                  color: "#f9d423",
+                  minHeight: "42px"
+                }}
+              >
+                ← Mis rutas
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="btn fw-bold rounded-pill flex-grow-1"
+                style={{
+                  background: "linear-gradient(135deg, #f9d423 0%, #ff6b35 100%)",
+                  border: "none",
+                  color: "#000",
+                  minHeight: "42px",
+                  boxShadow: "0 0 18px rgba(249,212,35,0.25)"
+                }}
+              >
+                🏠 Volver al Home
+              </button>
+            </div>
           </div>
 
           {/* Modal para fotos */}
