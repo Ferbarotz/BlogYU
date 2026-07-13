@@ -249,53 +249,59 @@ const RouteDetail = () => {
                 </h3>
               </div>
 
-              {/* Stats Cards */}
-              <div className="row g-3 mb-4">
-                <div className="col-6 col-md-4">
-                  <div style={{
-                    background: "rgba(249,212,35,0.1)",
-                    border: "1px solid rgba(249,212,35,0.3)",
-                    borderRadius: "16px",
-                    padding: "16px",
-                    textAlign: "center"
-                  }}>
-                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>🗺️</div>
-                    <div style={{ fontSize: "1.5rem", fontWeight: "700", color: "#f9d423" }}>{totalSteps}</div>
-                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
+              {/* Stats Compactos */}
+              <div className="d-flex flex-wrap gap-2 mb-4">
+                <div style={{
+                  background: "rgba(249,212,35,0.08)",
+                  border: "1px solid rgba(249,212,35,0.25)",
+                  borderRadius: "12px",
+                  padding: "8px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}>
+                  <span style={{ fontSize: "1.2rem" }}>🗺️</span>
+                  <div>
+                    <div style={{ fontSize: "1rem", fontWeight: "700", color: "#f9d423", lineHeight: "1.2" }}>{totalSteps}</div>
+                    <div style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {totalSteps === 1 ? 'Parada' : 'Paradas'}
                     </div>
                   </div>
                 </div>
 
-                <div className="col-6 col-md-4">
-                  <div style={{
-                    background: "rgba(255,107,53,0.1)",
-                    border: "1px solid rgba(255,107,53,0.3)",
-                    borderRadius: "16px",
-                    padding: "16px",
-                    textAlign: "center"
-                  }}>
-                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📸</div>
-                    <div style={{ fontSize: "1.5rem", fontWeight: "700", color: "#ff6b35" }}>{totalPhotos}</div>
-                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
+                <div style={{
+                  background: "rgba(255,107,53,0.08)",
+                  border: "1px solid rgba(255,107,53,0.25)",
+                  borderRadius: "12px",
+                  padding: "8px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}>
+                  <span style={{ fontSize: "1.2rem" }}>📸</span>
+                  <div>
+                    <div style={{ fontSize: "1rem", fontWeight: "700", color: "#ff6b35", lineHeight: "1.2" }}>{totalPhotos}</div>
+                    <div style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {totalPhotos === 1 ? 'Foto' : 'Fotos'}
                     </div>
                   </div>
                 </div>
 
-                <div className="col-12 col-md-4">
-                  <div style={{
-                    background: "rgba(249,212,35,0.1)",
-                    border: "1px solid rgba(249,212,35,0.3)",
-                    borderRadius: "16px",
-                    padding: "16px",
-                    textAlign: "center"
-                  }}>
-                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📅</div>
-                    <div style={{ fontSize: "0.9rem", fontWeight: "600", color: "#f9d423", lineHeight: "1.3" }}>
+                <div style={{
+                  background: "rgba(249,212,35,0.08)",
+                  border: "1px solid rgba(249,212,35,0.25)",
+                  borderRadius: "12px",
+                  padding: "8px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}>
+                  <span style={{ fontSize: "1.2rem" }}>📅</span>
+                  <div>
+                    <div style={{ fontSize: "0.8rem", fontWeight: "600", color: "#f9d423", lineHeight: "1.2" }}>
                       {route.created_at ? new Date(route.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                     </div>
-                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
+                    <div style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       Compartida
                     </div>
                   </div>
