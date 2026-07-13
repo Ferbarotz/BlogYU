@@ -165,6 +165,9 @@ const RouteDetail = () => {
     return unique;
   })();
 
+  const totalSteps = route.steps?.length || 0;
+  const totalPhotos = imgs.length;
+
   return (
     <>
       <svg style={{ height: 0 }}>
@@ -178,110 +181,315 @@ const RouteDetail = () => {
 
       <div style={{
         margin: 0,
-        paddingTop: '10px',
+        paddingTop: '20px',
+        paddingBottom: '40px',
         paddingLeft: '1rem',
         paddingRight: '1rem',
         background: "#0d1117",
         color: "#e0e0e0",
-        minHeight: "auto",
+        minHeight: "100vh",
       }}>
-        <div className="route-detail-container container" style={{ marginTop: 0, paddingTop: 0 }}>
+        <div className="route-detail-container container" style={{ maxWidth: "1200px", marginTop: 0, paddingTop: 0 }}>
           <button
             onClick={() => navigate('/my-routes')}
-            style={{ background: "transparent", border: "none", color: "#f9d423", cursor: "pointer", margin: 0, padding: 0, fontSize: "0.9rem" }}
+            style={{ 
+              background: "transparent", 
+              border: "none", 
+              color: "#f9d423", 
+              cursor: "pointer", 
+              marginBottom: "20px", 
+              padding: "8px 0", 
+              fontSize: "0.9rem",
+              transition: "all 0.2s ease"
+            }}
+            onMouseOver={e => e.currentTarget.style.transform = "translateX(-5px)"}
+            onMouseOut={e => e.currentTarget.style.transform = "translateX(0)"}
           >
             ← Volver a mis rutas
           </button>
 
-          {/* HEADER */}
-          <div className="p-4 mb-4" style={{ background: "#121026", borderRadius: "20px", border: "1px solid #f9d42388", boxShadow: "0 0 15px #f9d42333" }}>
-            <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
-              <div>
-                <h2 className="fw-black mb-2" style={{ color: "#f9d423", fontSize: "2rem", marginTop: 0 }}>
-                  {route.title || 'Ruta'}
-                </h2>
-                <div className="d-flex flex-wrap gap-3" style={{ color: "#b0b0b0", fontSize: "0.9rem" }}>
-                  <span>📍 {route.destination || '—'}</span>
-                  {route.start_date && (
-                    <span>
-                      📅 {new Date(route.start_date).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </span>
-                  )}
-                  {route.budget && (
-                    <span>💰 Presupuesto {route.budget}</span>
-                  )}
+          {/* HEADER CON HERO */}
+          <div className="mb-4" style={{ 
+            background: "linear-gradient(135deg, rgba(249,212,35,0.08) 0%, rgba(255,107,53,0.08) 100%)", 
+            borderRadius: "24px", 
+            border: "1px solid rgba(249,212,35,0.2)",
+            boxShadow: "0 8px 32px rgba(249,212,35,0.15)",
+            overflow: "hidden"
+          }}>
+            <div className="p-4 p-md-5">
+              {/* Título principal */}
+              <h1 className="fw-bold mb-3" style={{ 
+                color: "#f9d423", 
+                fontSize: "clamp(1.75rem, 4vw, 3rem)", 
+                marginTop: 0,
+                lineHeight: "1.2",
+                textShadow: "0 2px 8px rgba(249,212,35,0.3)"
+              }}>
+                {route.title || 'Ruta sin título'}
+              </h1>
+
+              {/* Destino destacado */}
+              <div className="d-flex align-items-center gap-2 mb-4">
+                <span style={{ fontSize: "1.5rem" }}>📍</span>
+                <h3 style={{ 
+                  color: "rgba(255,255,255,0.9)", 
+                  fontSize: "1.3rem", 
+                  margin: 0,
+                  fontWeight: 500
+                }}>
+                  {route.destination || 'Destino no especificado'}
+                </h3>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="row g-3 mb-4">
+                <div className="col-6 col-md-3">
+                  <div style={{
+                    background: "rgba(249,212,35,0.1)",
+                    border: "1px solid rgba(249,212,35,0.3)",
+                    borderRadius: "16px",
+                    padding: "16px",
+                    textAlign: "center"
+                  }}>
+                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>🗺️</div>
+                    <div style={{ fontSize: "1.5rem", fontWeight: "700", color: "#f9d423" }}>{totalSteps}</div>
+                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
+                      {totalSteps === 1 ? 'Parada' : 'Paradas'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div style={{
+                    background: "rgba(255,107,53,0.1)",
+                    border: "1px solid rgba(255,107,53,0.3)",
+                    borderRadius: "16px",
+                    padding: "16px",
+                    textAlign: "center"
+                  }}>
+                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📸</div>
+                    <div style={{ fontSize: "1.5rem", fontWeight: "700", color: "#ff6b35" }}>{totalPhotos}</div>
+                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
+                      {totalPhotos === 1 ? 'Foto' : 'Fotos'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div style={{
+                    background: "rgba(249,212,35,0.1)",
+                    border: "1px solid rgba(249,212,35,0.3)",
+                    borderRadius: "16px",
+                    padding: "16px",
+                    textAlign: "center"
+                  }}>
+                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📅</div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600", color: "#f9d423", lineHeight: "1.3" }}>
+                      {route.created_at ? new Date(route.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
+                      Publicado
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div style={{
+                    background: "rgba(255,107,53,0.1)",
+                    border: "1px solid rgba(255,107,53,0.3)",
+                    borderRadius: "16px",
+                    padding: "16px",
+                    textAlign: "center"
+                  }}>
+                    <div style={{ fontSize: "2rem", marginBottom: "8px" }}>✨</div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "600", color: "#ff6b35", lineHeight: "1.3" }}>
+                      {route.budget || 'No definido'}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px" }}>
+                      Presupuesto
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="text-end">
-                <small style={{ color: "#f9d423" }}>Publicado el</small>
-                <p style={{ color: "#f9d423", margin: 0, fontSize: "0.85rem" }}>
-                  {route.created_at ? new Date(route.created_at).toLocaleDateString('es-ES') : '—'}
-                </p>
-              </div>
-            </div>
 
-            {route.author && (
-              <div className="mt-3 pt-3" style={{ borderTop: "1px solid #f9d42388" }}>
-                <span style={{ color: "#f9d423", fontSize: "0.8rem" }}>✍️ Por </span>
-                <Link to={`/profile/${route.author.id}`} style={{ color: "#f9d423", fontSize: "0.85rem", fontWeight: "600" }}>
-                  {route.author.name || route.author.email}
-                </Link>
-              </div>
-            )}
+              {/* Autor */}
+              {route.author && (
+                <div className="d-flex align-items-center gap-3 pt-3" style={{ 
+                  borderTop: "1px solid rgba(249,212,35,0.2)"
+                }}>
+                  <div style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    background: "linear-gradient(135deg, #f9d423, #ff6b35)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "1.5rem",
+                    fontWeight: "700",
+                    color: "#000"
+                  }}>
+                    {(route.author.name || route.author.email || '?')[0].toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>
+                      Creado por
+                    </div>
+                    <Link 
+                      to={`/profile/${route.author.id}`} 
+                      style={{ 
+                        color: "#f9d423", 
+                        fontSize: "1rem", 
+                        fontWeight: "600",
+                        textDecoration: "none",
+                        transition: "all 0.2s ease"
+                      }}
+                      onMouseOver={e => e.currentTarget.style.textShadow = "0 0 8px rgba(249,212,35,0.6)"}
+                      onMouseOut={e => e.currentTarget.style.textShadow = "none"}
+                    >
+                      {route.author.name || route.author.email}
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* GALERÍA DE IMÁGENES */}
-          <div className="d-flex flex-wrap gap-2 mb-4">
-            {imgs.length === 0 ? (
-              <div style={{ color: "#f9d423", fontStyle: "italic" }}>No hay imágenes disponibles</div>
-            ) : (
-              imgs.map((src, i) => (
-                <img
-                  key={i}
-                  src={src}
-                  alt={`Foto ${i + 1}`}
-                  style={{ width: 150, height: 150, objectFit: "cover", borderRadius: 12, cursor: "pointer" }}
-                  onError={(e) => { e.target.src = "https://placehold.co/150?text=Sin+imagen"; }}
-                  onClick={() => {
-                    setModalPhotos(imgs);
-                    setModalImgIndex(i);
-                    setModalOpen(true);
-                  }}
-                />
-              ))
-            )}
-          </div>
+          {imgs.length > 0 && (
+            <div className="mb-5">
+              <h5 className="mb-3 d-flex align-items-center gap-2" style={{ color: "#f9d423", fontSize: "1.3rem" }}>
+                <span>📸</span>
+                Galería de la aventura
+                <span style={{ 
+                  fontSize: "0.8rem", 
+                  fontWeight: 400, 
+                  color: "rgba(255,255,255,0.5)",
+                  background: "rgba(249,212,35,0.1)",
+                  padding: "4px 12px",
+                  borderRadius: "12px"
+                }}>
+                  {imgs.length} {imgs.length === 1 ? 'foto' : 'fotos'}
+                </span>
+              </h5>
 
-          {/* MAPA */}
-          {mapCenter ? (
-            <div style={{ height: '400px', marginBottom: '2rem', borderRadius: '12px', overflow: 'hidden' }}>
-              <MapContainer center={mapCenter} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
-                <FitBounds points={stepsWithCoords} />
-                {stepsWithCoords.map((step, i) => (
-                  <Marker key={i} position={[step.lat, step.lng]}>
-                    <Popup>
-                      <strong>{step.title}</strong><br />
-                      {step.description || '—'}
-                    </Popup>
-                  </Marker>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: imgs.length === 1 ? "1fr" : "repeat(auto-fill, minmax(200px, 1fr))",
+                gap: "16px"
+              }}>
+                {imgs.map((src, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      position: "relative",
+                      aspectRatio: i === 0 && imgs.length > 1 ? "16/9" : "1/1",
+                      gridColumn: i === 0 && imgs.length > 1 ? "span 2" : "span 1",
+                      borderRadius: "16px",
+                      overflow: "hidden",
+                      cursor: "pointer",
+                      border: i === 0 ? "2px solid #f9d423" : "1px solid rgba(249,212,35,0.2)",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                      transition: "all 0.3s ease"
+                    }}
+                    onMouseOver={e => {
+                      e.currentTarget.style.transform = "scale(1.02)";
+                      e.currentTarget.style.boxShadow = "0 8px 24px rgba(249,212,35,0.3)";
+                    }}
+                    onMouseOut={e => {
+                      e.currentTarget.style.transform = "scale(1)";
+                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+                    }}
+                    onClick={() => openModal(imgs, i)}
+                  >
+                    <img
+                      src={src}
+                      alt={`Foto ${i + 1}`}
+                      style={{ 
+                        width: "100%", 
+                        height: "100%", 
+                        objectFit: "cover"
+                      }}
+                      onError={(e) => { e.target.src = "https://placehold.co/400x400?text=Sin+imagen"; }}
+                    />
+                    {i === 0 && imgs.length > 1 && (
+                      <div style={{
+                        position: "absolute",
+                        top: "12px",
+                        left: "12px",
+                        background: "linear-gradient(135deg, #f9d423, #ff6b35)",
+                        color: "#000",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        fontSize: "0.7rem",
+                        fontWeight: "700",
+                        textTransform: "uppercase",
+                        letterSpacing: "1px",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.3)"
+                      }}>
+                        ⭐ Destacada
+                      </div>
+                    )}
+                  </div>
                 ))}
-              </MapContainer>
-            </div>
-          ) : (
-            <div className="mb-4 p-3 text-center" style={{ background: "#121026", borderRadius: "12px", border: "1px solid #f9d42322", color: "#f9d423" }}>
-              <p style={{ margin: 0 }}>No hay coordenadas disponibles para mostrar el mapa.</p>
+              </div>
             </div>
           )}
 
-          {/* TIMELINE DE STEPS */}
-          <h5 className="mb-4" style={{ color: "#f9d423" }}>📖 Diario de Experiencias</h5>
+          {/* MAPA */}
+          {mapCenter ? (
+            <div className="mb-5">
+              <h5 className="mb-3 d-flex align-items-center gap-2" style={{ color: "#f9d423", fontSize: "1.3rem" }}>
+                <span>🗺️</span>
+                Recorrido en mapa
+              </h5>
+              <div style={{ 
+                height: '450px', 
+                borderRadius: '20px', 
+                overflow: 'hidden',
+                border: "2px solid rgba(249,212,35,0.2)",
+                boxShadow: "0 8px 24px rgba(249,212,35,0.15)"
+              }}>
+                <MapContainer center={mapCenter} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
+                  <FitBounds points={stepsWithCoords} />
+                  {stepsWithCoords.map((step, i) => (
+                    <Marker key={i} position={[step.lat, step.lng]}>
+                      <Popup>
+                        <strong>{step.title}</strong><br />
+                        {step.description || '—'}
+                      </Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+              </div>
+            </div>
+          ) : null}
 
-          <div style={{ position: "relative" }}>
-            <div style={{
-              position: "absolute", left: "22px", top: "0", bottom: "0",
-              width: "2px", background: `linear-gradient(to bottom, #f9d423cc, #ff6b3533)`
-            }} />
+          {/* TIMELINE DE STEPS */}
+          <div className="mb-4">
+            <h5 className="mb-4 d-flex align-items-center gap-2" style={{ color: "#f9d423", fontSize: "1.3rem" }}>
+              <span>🌍</span>
+              Bitácora de la aventura
+              <span style={{ 
+                fontSize: "0.8rem", 
+                fontWeight: 400, 
+                color: "rgba(255,255,255,0.5)",
+                background: "rgba(249,212,35,0.1)",
+                padding: "4px 12px",
+                borderRadius: "12px"
+              }}>
+                {totalSteps} {totalSteps === 1 ? 'parada' : 'paradas'}
+              </span>
+            </h5>
+
+            <div style={{ position: "relative" }}>
+              <div style={{
+                position: "absolute", left: "28px", top: "0", bottom: "0",
+                width: "3px", 
+                background: `linear-gradient(to bottom, #f9d423, #ff6b35)`,
+                borderRadius: "4px"
+              }} />
 
             {route.steps && route.steps.map((step, index) => {
               const cfg = TYPE_CONFIG[step.type] || TYPE_CONFIG.otro;
@@ -305,77 +513,183 @@ const RouteDetail = () => {
               });
 
               return (
-                <div key={step.id || index} className="d-flex gap-4 mb-4" style={{ position: "relative" }}>
+                <div key={step.id || index} className="d-flex gap-4 mb-5" style={{ position: "relative" }}>
                   <div style={{
-                    width: "46px", height: "46px", borderRadius: "50%", flexShrink: 0,
-                    background: `linear-gradient(135deg, ${cfg.colorStart}33, ${cfg.colorEnd}33)`,
-                    border: `2px solid ${cfg.colorStart}`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "1.2rem", zIndex: 1
+                    width: "58px", 
+                    height: "58px", 
+                    borderRadius: "50%", 
+                    flexShrink: 0,
+                    background: `linear-gradient(135deg, ${cfg.colorStart}, ${cfg.colorEnd})`,
+                    border: `3px solid rgba(13,17,23,1)`,
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center",
+                    fontSize: "1.5rem", 
+                    zIndex: 2,
+                    boxShadow: `0 4px 16px ${cfg.colorStart}88`
                   }}>
                     {cfg.icon}
                   </div>
 
                   <div className="flex-grow-1 p-4" style={{
-                    background: "#121026",
-                    borderRadius: "15px",
-                    border: `1px solid ${cfg.colorStart}55`,
-                    borderLeft: `3px solid ${cfg.colorStart}`,
-                    boxShadow: `0 0 10px ${cfg.colorEnd}33`
-                  }}>
-                    <div className="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-                      <div>
-                        <span className="badge px-2 py-1 me-2" style={{ background: `linear-gradient(135deg, ${cfg.colorStart}88, ${cfg.colorEnd}88)`, color: cfg.colorStart, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "1px" }}>
+                    background: "linear-gradient(135deg, rgba(249,212,35,0.04) 0%, rgba(255,107,53,0.04) 100%)",
+                    borderRadius: "20px",
+                    border: `2px solid rgba(249,212,35,0.2)`,
+                    boxShadow: `0 4px 20px rgba(0,0,0,0.3)`,
+                    transition: "all 0.3s ease"
+                  }}
+                  onMouseOver={e => e.currentTarget.style.boxShadow = `0 8px 32px ${cfg.colorStart}44`}
+                  onMouseOut={e => e.currentTarget.style.boxShadow = `0 4px 20px rgba(0,0,0,0.3)`}
+                  >
+                    <div className="mb-3">
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <span style={{ 
+                          background: `linear-gradient(135deg, ${cfg.colorStart}, ${cfg.colorEnd})`,
+                          color: "#000",
+                          padding: "4px 10px",
+                          borderRadius: "8px",
+                          fontSize: "0.7rem",
+                          fontWeight: "700",
+                          textTransform: "uppercase",
+                          letterSpacing: "1.5px"
+                        }}>
                           {cfg.label}
                         </span>
-                        <h6 className="d-inline fw-bold" style={{ color: "#f9d423" }}>{step.title}</h6>
+                        <span style={{
+                          background: "rgba(249,212,35,0.1)",
+                          color: "rgba(255,255,255,0.5)",
+                          padding: "4px 10px",
+                          borderRadius: "8px",
+                          fontSize: "0.7rem",
+                          fontWeight: "600"
+                        }}>
+                          PASO {index + 1}
+                        </span>
                       </div>
-                      <Stars rating={step.rating} />
+                      
+                      <h4 style={{ 
+                        color: "#f9d423", 
+                        fontSize: "1.4rem", 
+                        fontWeight: "700",
+                        marginBottom: "12px",
+                        marginTop: "8px"
+                      }}>
+                        {step.title}
+                      </h4>
+
+                      <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
+                        {step.location && (
+                          <span style={{ 
+                            color: "rgba(255,255,255,0.7)", 
+                            fontSize: "0.9rem",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px"
+                          }}>
+                            <span style={{ fontSize: "1.1rem" }}>📌</span>
+                            {step.location}
+                          </span>
+                        )}
+                        {step.rating && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <Stars rating={step.rating} />
+                            <span style={{ 
+                              color: "rgba(255,255,255,0.5)", 
+                              fontSize: "0.85rem",
+                              marginLeft: "4px"
+                            }}>
+                              ({step.rating}/5)
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {step.description && (
+                        <p style={{ 
+                          color: "rgba(255,255,255,0.8)", 
+                          fontSize: "1rem", 
+                          marginBottom: "16px", 
+                          lineHeight: "1.7",
+                          padding: "16px",
+                          background: "rgba(0,0,0,0.2)",
+                          borderRadius: "12px",
+                          borderLeft: "3px solid #f9d423"
+                        }}>
+                          {step.description}
+                        </p>
+                      )}
                     </div>
 
-                    {step.location && (
-                      <p style={{ color: "#f9d423", fontSize: "0.8rem", marginBottom: "8px" }}>
-                        📌 {step.location}
-                      </p>
-                    )}
-
-                    {step.description && (
-                      <p style={{ color: "#f9d423", fontSize: "0.9rem", marginBottom: "12px", lineHeight: "1.6" }}>
-                        {step.description}
-                      </p>
-                    )}
-
                     {photos.length > 0 && (
-                      <div className="d-flex flex-wrap gap-2 mt-2">
-                        {photos.map((src, i) => (
-                          <img
-                            key={`${src}-${i}`}
-                            src={src}
-                            alt={`foto-${i}`}
-                            style={{
-                              width: "150px", height: "150px",
-                              objectFit: "cover", borderRadius: "10px",
-                              border: `1px solid ${cfg.colorStart}aa`,
-                              cursor: "pointer"
-                            }}
-                            onError={(e) => { e.target.src = "https://placehold.co/150?text=Sin+imagen"; }}
-                            onClick={() => openModal(photos, i)}
-                          />
-                        ))}
+                      <div>
+                        <div style={{ 
+                          color: "rgba(255,255,255,0.6)", 
+                          fontSize: "0.85rem", 
+                          marginBottom: "12px",
+                          fontWeight: "600",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}>
+                          <span style={{ fontSize: "1rem" }}>📸</span>
+                          {photos.length} {photos.length === 1 ? 'foto' : 'fotos'}
+                        </div>
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                          gap: "12px"
+                        }}>
+                          {photos.map((src, i) => (
+                            <div
+                              key={`${src}-${i}`}
+                              style={{
+                                position: "relative",
+                                aspectRatio: "1/1",
+                                borderRadius: "12px",
+                                overflow: "hidden",
+                                cursor: "pointer",
+                                border: `2px solid ${cfg.colorStart}44`,
+                                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                                transition: "all 0.3s ease"
+                              }}
+                              onMouseOver={e => {
+                                e.currentTarget.style.transform = "scale(1.05)";
+                                e.currentTarget.style.boxShadow = `0 6px 20px ${cfg.colorStart}66`;
+                              }}
+                              onMouseOut={e => {
+                                e.currentTarget.style.transform = "scale(1)";
+                                e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+                              }}
+                              onClick={() => openModal(photos, i)}
+                            >
+                              <img
+                                src={src}
+                                alt={`foto-${i}`}
+                                style={{
+                                  width: "100%",
+                                  height: "100%",
+                                  objectFit: "cover"
+                                }}
+                                onError={(e) => { e.target.src = "https://placehold.co/200?text=Sin+imagen"; }}
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
               );
             })}
-          </div>
-
-          {(!route.steps || route.steps.length === 0) && (
-            <div className="text-center py-5" style={{ color: "#f9d423" }}>
-              <p style={{ fontSize: "2rem" }}>📭</p>
-              <p>Esta ruta no tiene experiencias registradas</p>
             </div>
-          )}
+
+            {(!route.steps || route.steps.length === 0) && (
+              <div className="text-center py-5" style={{ color: "#f9d423" }}>
+                <p style={{ fontSize: "2rem" }}>📭</p>
+                <p>Esta ruta no tiene experiencias registradas</p>
+              </div>
+            )}
+          </div>
 
           {/* Modal para fotos */}
           {modalOpen && (
