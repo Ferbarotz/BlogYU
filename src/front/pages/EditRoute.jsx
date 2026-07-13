@@ -388,70 +388,161 @@ const EditRoute = () => {
             </div>
           </div>
 
+          {/* ── SEPARADOR ── */}
+          <div className="d-flex align-items-center mb-4">
+            <div style={{ height: "2px", flex: 1, background: "linear-gradient(to right, transparent, rgba(249,212,35,0.3))" }} />
+            <span className="mx-3 fw-bold text-uppercase" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "3px", fontSize: "0.75rem" }}>
+              Itinerario
+            </span>
+            <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(249,212,35,0.3))" }} />
+          </div>
+
           {/* ── STEPS ── */}
           <div style={{ marginBottom: "24px" }}>
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 style={{ color: "#f9d423", fontWeight: 700, margin: 0 }}>
-                🧭 Pasos de la ruta ({steps.length})
+                🧭 Pasos de la ruta
+                <span style={{ 
+                  marginLeft: "12px", 
+                  fontSize: "0.75rem", 
+                  color: "rgba(255,255,255,0.4)",
+                  background: "rgba(249,212,35,0.1)",
+                  padding: "4px 12px",
+                  borderRadius: "12px",
+                  fontWeight: 400
+                }}>
+                  {steps.length} {steps.length === 1 ? "paso" : "pasos"}
+                </span>
               </h5>
-              <button type="button" onClick={addStep} style={{
-                background: "linear-gradient(135deg, #f9d423, #ff4e50)",
-                border: "none", color: "#000", borderRadius: "20px",
-                padding: "8px 20px", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem"
-              }}>
+              <button 
+                type="button" 
+                onClick={addStep} 
+                style={{
+                  background: "linear-gradient(135deg, #f9d423, #ff4e50)",
+                  border: "none", 
+                  color: "#000", 
+                  borderRadius: "20px",
+                  padding: "10px 24px", 
+                  fontWeight: 700, 
+                  cursor: "pointer", 
+                  fontSize: "0.85rem",
+                  boxShadow: "0 4px 12px rgba(249,212,35,0.3)",
+                  transition: "all 0.2s ease"
+                }}
+                onMouseOver={e => e.currentTarget.style.transform = "translateY(-2px)"}
+                onMouseOut={e => e.currentTarget.style.transform = "translateY(0)"}
+              >
                 + Añadir paso
               </button>
             </div>
 
             {steps.length === 0 && (
               <div style={{
-                textAlign: "center", padding: "40px",
-                background: "rgba(255,255,255,0.02)", border: "2px dashed rgba(255,255,255,0.1)",
-                borderRadius: "16px", color: "rgba(255,255,255,0.3)"
+                textAlign: "center", 
+                padding: "60px 40px",
+                background: "rgba(255,255,255,0.02)", 
+                border: "2px dashed rgba(249,212,35,0.2)",
+                borderRadius: "20px", 
+                color: "rgba(255,255,255,0.3)"
               }}>
-                No hay pasos. Haz clic en "+ Añadir paso" para empezar.
+                <div style={{ fontSize: "3rem", marginBottom: "16px", opacity: 0.5 }}>🗺️</div>
+                <p style={{ fontSize: "1.1rem", color: "rgba(255,255,255,0.5)", marginBottom: "8px" }}>
+                  Tu itinerario está vacío
+                </p>
+                <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.3)", marginBottom: 0 }}>
+                  Haz clic en "<span style={{ color: "#f9d423" }}>+ Añadir paso</span>" para crear tu primera parada
+                </p>
               </div>
             )}
 
             {steps.map((step, idx) => {
               const totalPhotos = step.images.length + step.newFiles.length;
+              const stepTypeLabel = STEP_TYPES.find(t => t.id === step.type)?.label || "✨ Otro";
+              
               return (
                 <div key={step._key} style={{
                   background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: "16px", padding: "24px", marginBottom: "16px"
+                  border: "1px solid rgba(249,212,35,0.1)",
+                  borderRadius: "20px", 
+                  padding: "28px", 
+                  marginBottom: "20px",
+                  position: "relative",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.2)"
                 }}>
+                  {/* Número de paso decorativo */}
+                  <div style={{
+                    position: "absolute",
+                    top: "-12px",
+                    left: "24px",
+                    background: "linear-gradient(135deg, #f9d423, #ff4e50)",
+                    color: "#000",
+                    fontWeight: 800,
+                    fontSize: "0.75rem",
+                    padding: "6px 16px",
+                    borderRadius: "12px",
+                    boxShadow: "0 4px 12px rgba(249,212,35,0.4)"
+                  }}>
+                    {stepTypeLabel} • PASO {idx + 1}
+                  </div>
+
                   {/* Step header */}
-                  <div className="d-flex justify-content-between align-items-center mb-3">
-                    <span style={{ color: "#f9d423", fontWeight: 700, fontSize: "0.9rem" }}>
-                      Paso {idx + 1}
-                    </span>
+                  <div className="d-flex justify-content-between align-items-center mb-3" style={{ marginTop: "8px" }}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {totalPhotos > 0 && (
+                        <span style={{ 
+                          fontSize: "0.75rem", 
+                          color: "rgba(255,255,255,0.5)",
+                          background: "rgba(255,255,255,0.05)",
+                          padding: "4px 10px",
+                          borderRadius: "8px"
+                        }}>
+                          📸 {totalPhotos}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button type="button" onClick={() => moveStep(idx, -1)}
                         disabled={idx === 0}
                         style={{
-                          background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-                          color: "#fff", borderRadius: "8px", padding: "4px 10px",
-                          cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1
+                          background: "rgba(255,255,255,0.05)", 
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "#fff", 
+                          borderRadius: "10px", 
+                          padding: "6px 12px",
+                          cursor: idx === 0 ? "not-allowed" : "pointer", 
+                          opacity: idx === 0 ? 0.3 : 1,
+                          fontSize: "0.85rem",
+                          fontWeight: 600
                         }}>
                         ↑
                       </button>
                       <button type="button" onClick={() => moveStep(idx, 1)}
                         disabled={idx === steps.length - 1}
                         style={{
-                          background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-                          color: "#fff", borderRadius: "8px", padding: "4px 10px",
+                          background: "rgba(255,255,255,0.05)", 
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "#fff", 
+                          borderRadius: "10px", 
+                          padding: "6px 12px",
                           cursor: idx === steps.length - 1 ? "not-allowed" : "pointer",
-                          opacity: idx === steps.length - 1 ? 0.3 : 1
+                          opacity: idx === steps.length - 1 ? 0.3 : 1,
+                          fontSize: "0.85rem",
+                          fontWeight: 600
                         }}>
                         ↓
                       </button>
                       <button type="button" onClick={() => removeStep(idx)}
                         style={{
-                          background: "rgba(220,53,69,0.15)", border: "1px solid rgba(220,53,69,0.3)",
-                          color: "#ff4e50", borderRadius: "8px", padding: "4px 10px", cursor: "pointer"
+                          background: "rgba(220,53,69,0.15)", 
+                          border: "1px solid rgba(220,53,69,0.3)",
+                          color: "#ff4e50", 
+                          borderRadius: "10px", 
+                          padding: "6px 12px", 
+                          cursor: "pointer",
+                          fontSize: "0.85rem",
+                          fontWeight: 600
                         }}>
-                        ✕
+                        🗑️
                       </button>
                     </div>
                   </div>
