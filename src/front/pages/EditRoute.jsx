@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
 
@@ -29,13 +29,147 @@ const emptyStep = () => ({
   dragOver: false,
 });
 
+function useNominatim(query, minChars = 2) {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (!query || query.length < minChars) {
+      setResults([]);
+      return;
+    }
+
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6&addressdetails=1`,
+          { headers: { "Accept-Language": "es" } }
+        );
+        const data = await res.json();
+        setResults(data || []);
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timerRef.current);
+  }, [query, minChars]);
+
+  return { results, loading };
+}
+
+function DestinationSearchInput({ value, onChange, inputStyle, focusOn, focusOff }) {
+  const [inputVal, setInputVal] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const { results, loading } = useNominatim(inputVal);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => setInputVal(value || ""), [value]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleChange = (e) => {
+    const next = e.target.value;
+    setInputVal(next);
+    onChange(next);
+    setOpen(true);
+  };
+
+  const handleSelect = (item) => {
+    const name = (item.display_name || "").split(",").slice(0, 3).join(", ");
+    setInputVal(name);
+    onChange(name);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={wrapperRef} style={{ position: "relative", width: "100%" }}>
+      <div style={{ position: "relative" }}>
+        <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "1rem", pointerEvents: "none" }}>
+          📍
+        </span>
+        <input
+          type="text"
+          value={inputVal}
+          onChange={handleChange}
+          onFocus={(e) => { focusOn(e); if (inputVal.length >= 2) setOpen(true); }}
+          onBlur={focusOff}
+          placeholder="Ej: Madrid, España"
+          style={{
+            ...inputStyle,
+            paddingLeft: "38px",
+            paddingRight: loading ? "38px" : inputStyle?.paddingRight || "16px"
+          }}
+          autoComplete="off"
+          required
+        />
+        {loading && (
+          <span style={{
+            position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)",
+            fontSize: "0.75rem", color: "#f9d423"
+          }}>
+            Buscando...
+          </span>
+        )}
+      </div>
+
+      {open && (results.length > 0 || inputVal.length >= 2) && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 40,
+          background: "#131a24", border: "1px solid rgba(249,212,35,0.2)",
+          borderRadius: "12px", overflow: "hidden", boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+          maxHeight: "220px", overflowY: "auto"
+        }}>
+          {results.length === 0 ? (
+            <div style={{ padding: "10px 12px", color: "rgba(255,255,255,0.45)", fontSize: "0.85rem" }}>
+              No se encontraron ubicaciones
+            </div>
+          ) : (
+            results.map((item) => {
+              const label = (item.display_name || "").split(",").slice(0, 3).join(", ");
+              return (
+                <button
+                  key={`${item.place_id}-${label}`}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSelect(item)}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left", cursor: "pointer",
+                    background: "transparent", border: "none", color: "rgba(255,255,255,0.88)",
+                    padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontSize: "0.86rem"
+                  }}
+                >
+                  📍 {label}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const EditRoute = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ title: "", destination: "", budget: "" });
+  const [form, setForm] = useState({ title: "", destination: "" });
   const [steps, setSteps] = useState([]);
   const [route, setRoute] = useState(null); // Estado para la ruta completa
 
@@ -68,7 +202,6 @@ const EditRoute = () => {
         setForm({
           title: data.title || "",
           destination: data.destination || "",
-          budget: data.budget || "",
         });
 
         setSteps((data.steps || []).map(s => ({
@@ -362,20 +495,18 @@ const EditRoute = () => {
                 placeholder="Ej: Aventura por los Alpes" />
             </div>
 
-            <div className="mb-4">
+            <div className="mb-1">
               <label style={labelStyle}>📍 Destino *</label>
-              <input type="text" value={form.destination} required style={inputStyle}
-                onChange={e => setForm(p => ({ ...p, destination: e.target.value }))}
-                onFocus={focusOn} onBlur={focusOff}
-                placeholder="Ej: Suiza, Europa" />
-            </div>
-
-            <div className="mb-4">
-              <label style={labelStyle}>💰 Presupuesto</label>
-              <input type="text" value={form.budget} style={inputStyle}
-                onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}
-                onFocus={focusOn} onBlur={focusOff}
-                placeholder="Ej: 1500€" />
+              <DestinationSearchInput
+                value={form.destination}
+                onChange={(next) => setForm(p => ({ ...p, destination: next }))}
+                inputStyle={inputStyle}
+                focusOn={focusOn}
+                focusOff={focusOff}
+              />
+              <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.78rem", marginTop: "8px" }}>
+                Escribe 2+ letras para buscar sugerencias de ubicación.
+              </div>
             </div>
           </div>
 
@@ -390,9 +521,9 @@ const EditRoute = () => {
 
           {/* ── STEPS ── */}
           <div style={{ marginBottom: "24px" }}>
-            <div className="d-flex justify-content-between align-items-center mb-3">
+            <div className="d-flex align-items-center mb-3">
               <h5 style={{ color: "#f9d423", fontWeight: 700, margin: 0 }}>
-                🧭 Pasos de la ruta
+                🌍 Bitácora de aventura
                 <span style={{ 
                   marginLeft: "12px", 
                   fontSize: "0.75rem", 
@@ -402,29 +533,9 @@ const EditRoute = () => {
                   borderRadius: "12px",
                   fontWeight: 400
                 }}>
-                  {steps.length} {steps.length === 1 ? "paso" : "pasos"}
+                  {steps.length} {steps.length === 1 ? "parada" : "paradas"}
                 </span>
               </h5>
-              <button 
-                type="button" 
-                onClick={addStep} 
-                style={{
-                  background: "linear-gradient(135deg, #f9d423, #ff4e50)",
-                  border: "none", 
-                  color: "#000", 
-                  borderRadius: "20px",
-                  padding: "10px 24px", 
-                  fontWeight: 700, 
-                  cursor: "pointer", 
-                  fontSize: "0.85rem",
-                  boxShadow: "0 4px 12px rgba(249,212,35,0.3)",
-                  transition: "all 0.2s ease"
-                }}
-                onMouseOver={e => e.currentTarget.style.transform = "translateY(-2px)"}
-                onMouseOut={e => e.currentTarget.style.transform = "translateY(0)"}
-              >
-                + Añadir paso
-              </button>
             </div>
 
             {steps.length === 0 && (
@@ -440,15 +551,33 @@ const EditRoute = () => {
                 <p style={{ fontSize: "1.1rem", color: "rgba(255,255,255,0.5)", marginBottom: "8px" }}>
                   Tu itinerario está vacío
                 </p>
-                <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.3)", marginBottom: 0 }}>
-                  Haz clic en "<span style={{ color: "#f9d423" }}>+ Añadir paso</span>" para crear tu primera parada
+                <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.3)", marginBottom: "18px" }}>
+                  Añade tu primera parada para comenzar esta aventura.
                 </p>
+                <button
+                  type="button"
+                  onClick={addStep}
+                  style={{
+                    background: "linear-gradient(135deg, #f9d423, #ff4e50)",
+                    border: "none",
+                    color: "#000",
+                    borderRadius: "20px",
+                    padding: "10px 24px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    boxShadow: "0 4px 12px rgba(249,212,35,0.3)"
+                  }}
+                >
+                  + Añadir paso
+                </button>
               </div>
             )}
 
             {steps.map((step, idx) => {
               const totalPhotos = step.images.length + step.newFiles.length;
               const stepTypeLabel = STEP_TYPES.find(t => t.id === step.type)?.label || "✨ Otro";
+              const isLastStep = idx === steps.length - 1;
               
               return (
                 <div key={step._key} style={{
@@ -676,12 +805,12 @@ const EditRoute = () => {
                           <div key={imgIdx} style={{
                             position: "relative", borderRadius: "10px",
                             overflow: "hidden", aspectRatio: "1",
-                            border: "2px solid rgba(0,242,254,0.4)"
+                            border: "2px solid rgba(249,212,35,0.45)"
                           }}>
                             <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                             <div style={{
                               position: "absolute", top: "4px", left: "4px",
-                              background: "rgba(0,242,254,0.85)", color: "#000",
+                              background: "rgba(249,212,35,0.9)", color: "#000",
                               fontSize: "0.55rem", padding: "2px 6px", borderRadius: "8px", fontWeight: 700
                             }}>
                               NUEVA
@@ -700,6 +829,31 @@ const EditRoute = () => {
                       </div>
                     )}
                   </div>
+
+                  {isLastStep && (
+                    <div style={{ marginTop: "18px", display: "flex", justifyContent: "center" }}>
+                      <button
+                        type="button"
+                        onClick={addStep}
+                        style={{
+                          background: "linear-gradient(135deg, #f9d423, #ff4e50)",
+                          border: "none",
+                          color: "#000",
+                          borderRadius: "20px",
+                          padding: "10px 24px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontSize: "0.85rem",
+                          boxShadow: "0 4px 12px rgba(249,212,35,0.3)",
+                          transition: "all 0.2s ease"
+                        }}
+                        onMouseOver={e => e.currentTarget.style.transform = "translateY(-2px)"}
+                        onMouseOut={e => e.currentTarget.style.transform = "translateY(0)"}
+                      >
+                        + Añadir paso
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
