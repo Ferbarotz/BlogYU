@@ -35,7 +35,7 @@ const EditRoute = () => {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ title: "", destination: "", start_date: "", budget: "" });
+  const [form, setForm] = useState({ title: "", destination: "", budget: "" });
   const [steps, setSteps] = useState([]);
   const [route, setRoute] = useState(null); // Estado para la ruta completa
 
@@ -68,7 +68,6 @@ const EditRoute = () => {
         setForm({
           title: data.title || "",
           destination: data.destination || "",
-          start_date: data.start_date || "",
           budget: data.budget || "",
         });
 
@@ -371,20 +370,12 @@ const EditRoute = () => {
                 placeholder="Ej: Suiza, Europa" />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-              <div>
-                <label style={labelStyle}>📅 Fecha de inicio</label>
-                <input type="date" value={form.start_date} style={inputStyle}
-                  onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))}
-                  onFocus={focusOn} onBlur={focusOff} />
-              </div>
-              <div>
-                <label style={labelStyle}>💰 Presupuesto</label>
-                <input type="text" value={form.budget} style={inputStyle}
-                  onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}
-                  onFocus={focusOn} onBlur={focusOff}
-                  placeholder="Ej: 1500€" />
-              </div>
+            <div className="mb-4">
+              <label style={labelStyle}>💰 Presupuesto</label>
+              <input type="text" value={form.budget} style={inputStyle}
+                onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}
+                onFocus={focusOn} onBlur={focusOff}
+                placeholder="Ej: 1500€" />
             </div>
           </div>
 
