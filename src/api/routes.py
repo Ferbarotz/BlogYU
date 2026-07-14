@@ -191,6 +191,21 @@ def forgot_password():
     FRONTEND_URL = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
     reset_url = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
 
+    mail_server = current_app.config.get('MAIL_SERVER') or os.environ.get('MAIL_SERVER')
+    mail_suppressed = bool(current_app.config.get('MAIL_SUPPRESS_SEND'))
+
+    if not mail_server or mail_suppressed:
+        current_app.logger.warning(
+            "Recuperación solicitada para %s pero el correo no está configurado (MAIL_SERVER ausente o MAIL_SUPPRESS_SEND activo)",
+            email,
+        )
+        if current_app.debug:
+            return jsonify({
+                "msg": "Si el email existe, se ha enviado un link de recuperación",
+                "reset_url": reset_url,
+            }), 200
+        return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
+
     try:
         msg = Message(
             subject="Recuperación de contraseña - BlogYU",
@@ -198,9 +213,16 @@ def forgot_password():
             body=f"Para restablecer tu contraseña haz clic en el siguiente enlace:\n\n{reset_url}\n\nEste enlace expirará en 30 minutos."
         )
         mail.send(msg)
-    except Exception as e:
+    except Exception:
         current_app.logger.exception("Error enviando correo de recuperación")
-        return jsonify({"msg": "Error al enviar el correo de recuperación", "error": str(e)}), 500
+        # No devolvemos 500 para no romper el flujo del frontend ni revelar estado interno.
+        if current_app.debug:
+            return jsonify({
+                "msg": "Si el email existe, se ha enviado un link de recuperación",
+                "reset_url": reset_url,
+                "warning": "No se pudo enviar el correo. Revisa configuración SMTP.",
+            }), 200
+        return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
 
     return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
 
