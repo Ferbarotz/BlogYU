@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useSearchParams, useParams, Link, useNavigate } from 'react-router-dom';
 import { API_BASE } from '../api/backend';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const { token: tokenFromPath } = useParams();
+  const tokenFromQuery = searchParams.get('token');
+  const token = tokenFromPath || tokenFromQuery;
   const navigate = useNavigate();
 
   const [password, setPassword] = useState('');
@@ -88,6 +90,16 @@ export default function ResetPassword() {
                 Introduce una contraseña segura y confirma para finalizar.
               </p>
             </div>
+
+            {!token && (
+              <div className="mb-3 py-2 px-3 small rounded-3" style={{
+                background: 'rgba(255,78,80,0.12)',
+                border: '1px solid rgba(255,78,80,0.2)',
+                color: '#ffb6b6'
+              }}>
+                ⚠️ El enlace no contiene un token válido. Solicita un nuevo enlace de recuperación.
+              </div>
+            )}
 
             {message && (
               <div className="mb-3 py-2 px-3 small rounded-3" style={{

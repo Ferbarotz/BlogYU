@@ -21,10 +21,15 @@ const Login = () => {
 
     const tryLogin = async (retries = 3) => {
       try {
+        const payload = {
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password
+        };
+
         const res = await fetch(`${API_BASE}/api/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
+          body: JSON.stringify(payload)
         });
 
         const data = await res.json().catch(() => ({}));
