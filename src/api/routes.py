@@ -117,7 +117,7 @@ def test_cloudinary():
 @api.route('/login', methods=['POST'])
 def login():
     body = request.get_json(silent=True) or {}
-    email = body.get('email')
+    email = (body.get('email') or '').strip().lower()
     password = body.get('password')
     if not email or not password:
         return jsonify({"msg": "email y password requeridos"}), 400
@@ -156,7 +156,7 @@ def login():
 def register():
     body = request.get_json(silent=True) or {}
     name = body.get('name')
-    email = body.get('email')
+    email = (body.get('email') or '').strip().lower()
     password = body.get('password')
     if not email or not password:
         return jsonify({"msg": "Email y password requeridos"}), 400
@@ -177,6 +177,7 @@ def register():
 @api.route('/forgot-password', methods=['POST'])
 def forgot_password():
     email = (request.get_json(silent=True) or {}).get('email') or request.form.get('email')
+    email = (email or '').strip().lower()
     if not email:
         return jsonify({"msg": "Email requerido"}), 400
 
@@ -213,7 +214,8 @@ def reset_password(token=None):
 
     try:
         data = decode_token(token)
-        user_id = data.get('sub') or data.get('identity')
+        raw_user_id = data.get('sub') or data.get('identity')
+        user_id = int(raw_user_id)
     except Exception as e:
         current_app.logger.exception("Token inválido/expirado")
         return jsonify({"msg": "Token inválido o expirado", "error": str(e)}), 400
