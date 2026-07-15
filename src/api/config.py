@@ -22,6 +22,7 @@ def _env_int(name, default):
     except (TypeError, ValueError):
         return default
 
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
     SQLALCHEMY_DATABASE_URI = os.environ.get(
@@ -34,11 +35,15 @@ class Config:
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     # ── Flask-Mail / SendGrid ──────────────────────────────────────────
-    MAIL_SERVER   = _clean(os.environ.get("MAIL_SERVER", "smtp.sendgrid.net")) or "smtp.sendgrid.net"
-    MAIL_PORT     = _env_int("MAIL_PORT", 587)
-    MAIL_USE_TLS  = _env_bool("MAIL_USE_TLS", "true")
-    MAIL_USE_SSL  = _env_bool("MAIL_USE_SSL", "false")
-    MAIL_USERNAME = _clean(os.environ.get("MAIL_USERNAME")) or None   # "apikey" para SendGrid
-    MAIL_PASSWORD = (os.environ.get("MAIL_PASSWORD") or "").strip() or None   # API Key de SendGrid
+    MAIL_SERVER = _clean(os.environ.get("MAIL_SERVER", "smtp.sendgrid.net")) or "smtp.sendgrid.net"
+    MAIL_PORT = _env_int("MAIL_PORT", 587)
+    MAIL_USE_TLS = _env_bool("MAIL_USE_TLS", "true")
+    MAIL_USE_SSL = _env_bool("MAIL_USE_SSL", "false")
+    MAIL_USERNAME = _clean(os.environ.get("MAIL_USERNAME")) or None  # "apikey" para SendGrid
+    MAIL_PASSWORD = (os.environ.get("MAIL_PASSWORD") or "").strip() or None  # API Key de SendGrid
     MAIL_DEFAULT_SENDER = _clean(os.environ.get("MAIL_DEFAULT_SENDER")) or None
-    MAIL_SUPPRESS_SEND  = _env_bool("MAIL_SUPPRESS_SEND", "false")
+    MAIL_SUPPRESS_SEND = _env_bool("MAIL_SUPPRESS_SEND", "false")
+
+    # ── Password reset ──────────────────────────────────────────────────
+    PASSWORD_RESET_TOKEN_EXPIRES_MINUTES = _env_int("PASSWORD_RESET_TOKEN_EXPIRES_MINUTES", 30)
+    PASSWORD_RESET_SALT = _clean(os.environ.get("PASSWORD_RESET_SALT", "password-reset")) or "password-reset"
