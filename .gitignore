@@ -1,1 +1,18 @@
-node_modules
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime data
+instance/
+*.log
