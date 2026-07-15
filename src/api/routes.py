@@ -41,6 +41,77 @@ def upload_to_cloudinary(file_obj, folder="blogyu"):
         current_app.logger.exception("Error subiendo a Cloudinary")
         return None
 
+# ----------------- EMAIL (SendGrid Web API por HTTPS) -----------------
+# Render bloquea los puertos SMTP salientes (25/465/587), por lo que Flask-Mail
+# (SMTP) nunca conecta y el worker muere por timeout (502). La Web API de
+# SendGrid usa HTTPS (443), que sí está permitido.
+import ssl
+import urllib.request
+import urllib.error
+
+
+def _get_sendgrid_api_key():
+    """La API key de SendGrid. Reutiliza MAIL_PASSWORD (donde ya está) o SENDGRID_API_KEY."""
+    key = os.environ.get("SENDGRID_API_KEY") or current_app.config.get("MAIL_PASSWORD") or os.environ.get("MAIL_PASSWORD")
+    key = (key or "").strip()
+    return key or None
+
+
+def _get_sender_email():
+    sender = (current_app.config.get("MAIL_DEFAULT_SENDER") or os.environ.get("MAIL_DEFAULT_SENDER") or "").strip()
+    # MAIL_DEFAULT_SENDER puede venir como "Nombre <correo@dominio>"; extraemos el correo.
+    if "<" in sender and ">" in sender:
+        sender = sender.split("<", 1)[1].split(">", 1)[0].strip()
+    return sender or None
+
+
+def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
+    """Envía un correo usando la Web API de SendGrid (HTTPS).
+
+    Devuelve (True, None) si se envió, o (False, "mensaje de error") si falló.
+    """
+    api_key = _get_sendgrid_api_key()
+    sender = _get_sender_email()
+
+    if not api_key:
+        return False, "Falta la API key de SendGrid (SENDGRID_API_KEY o MAIL_PASSWORD)."
+    if not sender:
+        return False, "Falta el remitente (MAIL_DEFAULT_SENDER)."
+
+    payload = {
+        "personalizations": [{"to": [{"email": to_email}]}],
+        "from": {"email": sender},
+        "subject": subject,
+        "content": [{"type": "text/plain", "value": body_text}],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.sendgrid.com/v3/mail/send",
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    ctx = ssl.create_default_context()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            status = resp.getcode()
+            if 200 <= status < 300:
+                return True, None
+            return False, f"SendGrid respondió con status {status}"
+    except urllib.error.HTTPError as e:
+        # SendGrid devuelve detalles del error en el cuerpo (p.ej. remitente no verificado).
+        try:
+            err_body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            err_body = ""
+        return False, f"SendGrid HTTP {e.code}: {err_body[:500]}"
+    except Exception as e:
+        return False, f"Error de red al contactar SendGrid: {e}"
+
+
 # Blueprint
 api = bp = Blueprint('api', __name__)
 
@@ -191,40 +262,34 @@ def forgot_password():
     FRONTEND_URL = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
     reset_url = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
 
-    mail_server = current_app.config.get('MAIL_SERVER') or os.environ.get('MAIL_SERVER')
     mail_suppressed = bool(current_app.config.get('MAIL_SUPPRESS_SEND'))
+    generic_ok = {"msg": "Si el email existe, se ha enviado un link de recuperación"}
 
-    if not mail_server or mail_suppressed:
-        current_app.logger.warning(
-            "Recuperación solicitada para %s pero el correo no está configurado (MAIL_SERVER ausente o MAIL_SUPPRESS_SEND activo)",
-            email,
-        )
+    if mail_suppressed:
+        current_app.logger.warning("Envío de correo suprimido (MAIL_SUPPRESS_SEND activo) para %s", email)
         if current_app.debug:
-            return jsonify({
-                "msg": "Si el email existe, se ha enviado un link de recuperación",
-                "reset_url": reset_url,
-            }), 200
-        return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
+            return jsonify({**generic_ok, "reset_url": reset_url}), 200
+        return jsonify(generic_ok), 200
 
-    try:
-        msg = Message(
-            subject="Recuperación de contraseña - BlogYU",
-            recipients=[email],
-            body=f"Para restablecer tu contraseña haz clic en el siguiente enlace:\n\n{reset_url}\n\nEste enlace expirará en 30 minutos."
-        )
-        mail.send(msg)
-    except Exception:
-        current_app.logger.exception("Error enviando correo de recuperación")
-        # No devolvemos 500 para no romper el flujo del frontend ni revelar estado interno.
+    subject = "Recuperación de contraseña - BlogYU"
+    body = (
+        "Para restablecer tu contraseña haz clic en el siguiente enlace:\n\n"
+        f"{reset_url}\n\n"
+        "Este enlace expirará en 30 minutos."
+    )
+
+    # Enviamos por la Web API de SendGrid (HTTPS). Render bloquea SMTP saliente.
+    ok, err = send_email_via_sendgrid_api(email, subject, body)
+
+    if ok:
+        current_app.logger.info("Correo de recuperación enviado a %s vía SendGrid API", email)
+    else:
+        current_app.logger.error("No se pudo enviar el correo de recuperación a %s: %s", email, err)
+        # No revelamos el fallo al usuario ni rompemos el flujo del frontend.
         if current_app.debug:
-            return jsonify({
-                "msg": "Si el email existe, se ha enviado un link de recuperación",
-                "reset_url": reset_url,
-                "warning": "No se pudo enviar el correo. Revisa configuración SMTP.",
-            }), 200
-        return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
+            return jsonify({**generic_ok, "reset_url": reset_url, "warning": err}), 200
 
-    return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
+    return jsonify(generic_ok), 200
 
 @api.route('/reset-password', methods=['POST'])
 @api.route('/reset-password/<token>', methods=['POST'])
@@ -852,17 +917,20 @@ def update_route(route_id):
 # ----------------- ADMIN / SETTINGS -----------------
 @api.route('/test-mail', methods=['GET'])
 def test_mail():
-    try:
-        msg = Message(
-            subject="Test correo BlogYU",
-            recipients=[current_app.config.get('MAIL_USERNAME')],
-            body="Este es un correo de prueba desde BlogYU."
-        )
-        mail.send(msg)
-        return jsonify({"msg": "Correo enviado correctamente"}), 200
-    except Exception as e:
-        current_app.logger.exception("Error enviando test mail")
-        return jsonify({"error": str(e)}), 500
+    # Destinatario: ?to=correo o, por defecto, el remitente verificado.
+    to = (request.args.get('to') or _get_sender_email() or '').strip()
+    if not to:
+        return jsonify({"error": "No hay destinatario. Usa ?to=correo o configura MAIL_DEFAULT_SENDER."}), 400
+
+    ok, err = send_email_via_sendgrid_api(
+        to,
+        "Test correo BlogYU",
+        "Este es un correo de prueba desde BlogYU (vía SendGrid Web API).",
+    )
+    if ok:
+        return jsonify({"msg": f"Correo de prueba enviado correctamente a {to}"}), 200
+    current_app.logger.error("Error enviando test mail: %s", err)
+    return jsonify({"error": err}), 502
 
 @api.route('/settings/home-background', methods=['GET'])
 @api.route('/home-background', methods=['GET'])
