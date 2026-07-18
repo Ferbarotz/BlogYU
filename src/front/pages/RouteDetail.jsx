@@ -88,6 +88,9 @@ const RouteDetail = () => {
   const [modalImgIndex, setModalImgIndex] = useState(0);
   const [modalPhotos, setModalPhotos] = useState([]);
 
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const isLoggedIn = !!user; // true si hay sesión activa
+
   useEffect(() => {
     const fetchRoute = async () => {
       try {
@@ -709,34 +712,53 @@ const RouteDetail = () => {
             onMouseOut={e => e.currentTarget.style.opacity = 0.72}
           >
             <div className="d-flex gap-2">
-              <button
-                type="button"
-                onClick={() => navigate('/my-routes')}
-                className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
-                style={{
-                  background: "transparent",
-                  border: "1px solid rgba(249,212,35,0.3)",
-                  color: "#f9d423",
-                  minHeight: "38px",
-                  fontSize: "0.85rem"
-                }}
-              >
-                ← Mis rutas
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
-                style={{
-                  background: "rgba(249,212,35,0.12)",
-                  border: "1px solid rgba(249,212,35,0.4)",
-                  color: "#f9d423",
-                  minHeight: "38px",
-                  fontSize: "0.85rem"
-                }}
-              >
-                🏠 Home
-              </button>
+              {isLoggedIn ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/my-routes')}
+                    className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
+                    style={{
+                      background: "transparent",
+                      border: "1px solid rgba(249,212,35,0.3)",
+                      color: "#f9d423",
+                      minHeight: "38px",
+                      fontSize: "0.85rem"
+                    }}
+                  >
+                    ← Mis rutas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/')}
+                    className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
+                    style={{
+                      background: "rgba(249,212,35,0.12)",
+                      border: "1px solid rgba(249,212,35,0.4)",
+                      color: "#f9d423",
+                      minHeight: "38px",
+                      fontSize: "0.85rem"
+                    }}
+                  >
+                    🏠 Home
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="btn btn-sm fw-semibold rounded-pill w-100"
+                  style={{
+                    background: "rgba(249,212,35,0.12)",
+                    border: "1px solid rgba(249,212,35,0.4)",
+                    color: "#f9d423",
+                    minHeight: "38px",
+                    fontSize: "0.85rem"
+                  }}
+                >
+                  🏠 Volver al Home
+                </button>
+              )}
             </div>
           </div>
 
