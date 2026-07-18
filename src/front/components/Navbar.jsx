@@ -39,6 +39,18 @@ const Navbar = () => {
 
   const [token, setToken] = useState(getToken);
   const [user, setUser] = useState(getUser);
+  const [isNavOpen, setIsNavOpen] = useState(false);
+
+  const closeNavbar = useCallback(() => {
+    const navCollapse = document.getElementById("navbarNav");
+    if (navCollapse && navCollapse.classList.contains("show")) {
+      const bsCollapse = window.bootstrap?.Collapse?.getInstance(navCollapse);
+      if (bsCollapse) {
+        bsCollapse.hide();
+      }
+    }
+    setIsNavOpen(false);
+  }, []);
 
   const clearSession = useCallback((shouldNavigate = true) => {
     localStorage.removeItem("token");
@@ -47,8 +59,9 @@ const Navbar = () => {
     window.dispatchEvent(new Event("authChange"));
     setToken(null);
     setUser(null);
+    closeNavbar(); // Cerrar menú al hacer logout
     if (shouldNavigate) navigate("/");
-  }, [navigate]);
+  }, [navigate, closeNavbar]);
 
   const refresh = useCallback(() => {
     setToken(getToken());
@@ -70,14 +83,45 @@ const Navbar = () => {
 
   useEffect(() => {
     const onStorage = () => refresh();
-    const onAuthChange = () => refresh();
+    const onAuthChange = () => {
+      refresh();
+      closeNavbar(); // Cerrar menú cuando cambia la autenticación
+    };
     window.addEventListener("storage", onStorage);
     window.addEventListener("authChange", onAuthChange);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("authChange", onAuthChange);
     };
-  }, [refresh]);
+  }, [refresh, closeNavbar]);
+
+  // Cerrar menú al cambiar de página
+  useEffect(() => {
+    closeNavbar();
+  }, [location.pathname, closeNavbar]);
+
+  // Cerrar menú al hacer clic fuera de él
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const navCollapse = document.getElementById("navbarNav");
+      const navToggler = document.querySelector(".navbar-toggler");
+      
+      if (
+        isNavOpen &&
+        navCollapse &&
+        !navCollapse.contains(event.target) &&
+        navToggler &&
+        !navToggler.contains(event.target)
+      ) {
+        closeNavbar();
+      }
+    };
+
+    if (isNavOpen) {
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [isNavOpen, closeNavbar]);
 
   useEffect(() => {
     ensureValidSession();
@@ -145,7 +189,16 @@ const Navbar = () => {
           </div>
         </Link>
 
-        <button className="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <button 
+          className="navbar-toggler border-0 shadow-none" 
+          type="button" 
+          data-bs-toggle="collapse" 
+          data-bs-target="#navbarNav"
+          onClick={() => setIsNavOpen(!isNavOpen)}
+          aria-controls="navbarNav"
+          aria-expanded={isNavOpen}
+          aria-label="Toggle navigation"
+        >
           <span className="navbar-toggler-icon"></span>
         </button>
 
@@ -157,6 +210,7 @@ const Navbar = () => {
                   <li className="nav-item">
                     <Link
                       to="/admin"
+                      onClick={closeNavbar}
                       className="btn btn-sm fw-bold px-3 d-flex align-items-center gap-2 admin-button"
                       style={{
                         background: "rgba(249,212,35,0.05)",
@@ -177,20 +231,20 @@ const Navbar = () => {
 
                 {/* Mis Rutas */}
                 <li className="nav-item">
-                  <Link className="nav-chip nav-chip--routes fw-bold" to="/my-routes">
+                  <Link className="nav-chip nav-chip--routes fw-bold" to="/my-routes" onClick={closeNavbar}>
                     <span>🗺️</span> Mis Rutas
                   </Link>
                 </li>
 
                 {/* Mis Posts */}
                 <li className="nav-item">
-                  <Link className="nav-chip nav-chip--posts fw-bold" to="/my-posts">
+                  <Link className="nav-chip nav-chip--posts fw-bold" to="/my-posts" onClick={closeNavbar}>
                     <span>📝</span> Mis Posts
                   </Link>
                 </li>
 
                 <li className="nav-item ms-lg-2">
-                  <Link to={`/profile/${user?.id}`} className="btn rounded-pill px-4 fw-bold user-profile-btn">
+                  <Link to={`/profile/${user?.id}`} className="btn rounded-pill px-4 fw-bold user-profile-btn" onClick={closeNavbar}>
                     🌍 {user?.name || "Viajero"}
                   </Link>
                 </li>
@@ -203,11 +257,11 @@ const Navbar = () => {
               <>
                 {/* Enlace "Entrar" actualizado: relleno azul (gradiente) con texto NEGRO */}
                 <li className="nav-item">
-                  <Link className="nav-link login-link fw-bold" to="/login">Entrar</Link>
+                  <Link className="nav-link login-link fw-bold" to="/login" onClick={closeNavbar}>Entrar</Link>
                 </li>
 
                 <li className="nav-item">
-                  <Link to="/register" className="btn signup-btn px-4 fw-bold text-dark">¡Unirme ahora!</Link>
+                  <Link to="/register" className="btn signup-btn px-4 fw-bold text-dark" onClick={closeNavbar}>¡Unirme ahora!</Link>
                 </li>
               </>
             )}
