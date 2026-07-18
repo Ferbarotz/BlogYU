@@ -233,17 +233,17 @@ const PostDetail = () => {
 
             <div style={{
               display: "grid",
-              gridTemplateColumns: images.length === 1 ? "1fr" : "repeat(auto-fill, minmax(200px, 1fr))",
-              gap: "16px"
+              gridTemplateColumns: images.length === 1 ? "1fr" : "repeat(auto-fill, minmax(140px, 1fr))",
+              gap: "12px",
+              maxWidth: "800px"
             }}>
               {images.map((src, i) => (
                 <div
                   key={i}
                   style={{
                     position: "relative",
-                    aspectRatio: i === 0 && images.length > 1 ? "16/9" : "1/1",
-                    gridColumn: i === 0 && images.length > 1 ? "span 2" : "span 1",
-                    borderRadius: "16px",
+                    aspectRatio: "1/1",
+                    borderRadius: "12px",
                     overflow: "hidden",
                     cursor: "pointer",
                     border: i === 0 ? `2px solid ${C_START}` : "1px solid rgba(0,242,254,0.2)",
@@ -266,17 +266,6 @@ const PostDetail = () => {
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     onError={(e) => { e.target.src = "https://placehold.co/400x400?text=Sin+imagen"; }}
                   />
-                  {i === 0 && images.length > 1 && (
-                    <div style={{
-                      position: "absolute", top: "12px", left: "12px",
-                      background: `linear-gradient(135deg, ${C_START}, ${C_END})`,
-                      color: "#000", padding: "6px 12px", borderRadius: "8px",
-                      fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase",
-                      letterSpacing: "1px", boxShadow: "0 2px 8px rgba(0,0,0,0.3)"
-                    }}>
-                      ⭐ Destacada
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
