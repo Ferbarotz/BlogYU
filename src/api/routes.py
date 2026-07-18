@@ -1,5 +1,6 @@
 # src/api/routes.py
 import os
+import re
 import json
 import traceback
 from time import time
@@ -57,12 +58,28 @@ def _get_sendgrid_api_key():
     return key or None
 
 
+# Identidad de remitente verificada en SendGrid. SendGrid rechaza (HTTP 403)
+# cualquier "from" que no coincida EXACTAMENTE con un Sender verificado.
+VERIFIED_SENDER_EMAIL = "ferbarotz23@gmail.com"
+
+
 def _get_sender_email():
-    sender = (current_app.config.get("MAIL_DEFAULT_SENDER") or os.environ.get("MAIL_DEFAULT_SENDER") or "").strip()
-    # MAIL_DEFAULT_SENDER puede venir como "Nombre <correo@dominio>"; extraemos el correo.
-    if "<" in sender and ">" in sender:
-        sender = sender.split("<", 1)[1].split(">", 1)[0].strip()
-    return sender or None
+    """Devuelve un correo de remitente limpio y válido.
+
+    MAIL_DEFAULT_SENDER puede venir en varios formatos:
+      - "correo@dominio"
+      - "Nombre <correo@dominio>"
+      - "Nombre correo@dominio"
+    Extraemos siempre solo la dirección de correo. Si no se encuentra una
+    dirección válida, usamos la identidad verificada en SendGrid para evitar
+    el error 403 "does not match a verified Sender Identity".
+    """
+    raw = (current_app.config.get("MAIL_DEFAULT_SENDER") or os.environ.get("MAIL_DEFAULT_SENDER") or "").strip()
+    match = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", raw)
+    sender = match.group(0).strip() if match else ""
+    if not sender:
+        sender = VERIFIED_SENDER_EMAIL
+    return sender
 
 
 def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
@@ -78,9 +95,12 @@ def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
     if not sender:
         return False, "Falta el remitente (MAIL_DEFAULT_SENDER)."
 
+    sender_name = (os.environ.get("MAIL_SENDER_NAME") or "BlogYU").strip() or "BlogYU"
+    current_app.logger.info("Enviando correo vía SendGrid API from=%s to=%s", sender, to_email)
+
     payload = {
         "personalizations": [{"to": [{"email": to_email}]}],
-        "from": {"email": sender},
+        "from": {"email": sender, "name": sender_name},
         "subject": subject,
         "content": [{"type": "text/plain", "value": body_text}],
     }
