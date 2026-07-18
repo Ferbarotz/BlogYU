@@ -229,13 +229,12 @@ const NewPost = () => {
                   alignItems: "center",
                   justifyContent: "center",
                   background: hasCategory ? selectedMeta.color : "transparent",
-                  color: hasCategory ? "#fff" : "rgba(255,255,255,0.4)",
-                  fontSize: hasCategory ? "0.85rem" : "1rem",
+                  fontSize: "1.1rem",
                   pointerEvents: "none",
                   zIndex: 2
                 }}
               >
-                <i className={`bi ${hasCategory ? selectedMeta.icon : "bi-search"}`} />
+                {hasCategory ? selectedMeta.icon : "🔍"}
               </span>
 
               <input
@@ -336,12 +335,11 @@ const NewPost = () => {
                               alignItems: "center",
                               justifyContent: "center",
                               background: meta.color,
-                              color: "#fff",
-                              fontSize: "0.9rem",
+                              fontSize: "1.2rem",
                               flexShrink: 0
                             }}
                           >
-                            <i className={`bi ${meta.icon}`} />
+                            {meta.icon}
                           </span>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ color: "#fff", fontWeight: 600, fontSize: "0.9rem" }}>{meta.name}</div>
