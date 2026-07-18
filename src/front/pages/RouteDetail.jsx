@@ -687,32 +687,38 @@ const RouteDetail = () => {
             )}
           </div>
 
-          {/* Barra de navegación fija */}
+          {/* Barra de navegación fija (sutil) */}
           <div style={{
             position: "fixed",
             left: "50%",
             bottom: "16px",
             transform: "translateX(-50%)",
-            width: "min(680px, calc(100% - 24px))",
+            width: "min(560px, calc(100% - 24px))",
             zIndex: 1200,
-            background: "rgba(13,17,23,0.88)",
-            border: "1px solid rgba(249,212,35,0.25)",
-            borderRadius: "16px",
+            background: "rgba(13,17,23,0.55)",
+            border: "1px solid rgba(249,212,35,0.15)",
+            borderRadius: "14px",
             backdropFilter: "blur(10px)",
             WebkitBackdropFilter: "blur(10px)",
-            padding: "10px",
-            boxShadow: "0 12px 28px rgba(0,0,0,0.35)"
-          }}>
-            <div className="d-flex gap-2 flex-wrap">
+            padding: "8px",
+            boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+            opacity: 0.72,
+            transition: "opacity 0.25s ease"
+          }}
+            onMouseOver={e => e.currentTarget.style.opacity = 1}
+            onMouseOut={e => e.currentTarget.style.opacity = 0.72}
+          >
+            <div className="d-flex gap-2">
               <button
                 type="button"
                 onClick={() => navigate('/my-routes')}
-                className="btn fw-bold rounded-pill flex-grow-1"
+                className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
                 style={{
-                  background: "rgba(249,212,35,0.12)",
-                  border: "1px solid rgba(249,212,35,0.45)",
+                  background: "transparent",
+                  border: "1px solid rgba(249,212,35,0.3)",
                   color: "#f9d423",
-                  minHeight: "42px"
+                  minHeight: "38px",
+                  fontSize: "0.85rem"
                 }}
               >
                 ← Mis rutas
@@ -720,16 +726,16 @@ const RouteDetail = () => {
               <button
                 type="button"
                 onClick={() => navigate('/')}
-                className="btn fw-bold rounded-pill flex-grow-1"
+                className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
                 style={{
-                  background: "linear-gradient(135deg, #f9d423 0%, #ff6b35 100%)",
-                  border: "none",
-                  color: "#000",
-                  minHeight: "42px",
-                  boxShadow: "0 0 18px rgba(249,212,35,0.25)"
+                  background: "rgba(249,212,35,0.12)",
+                  border: "1px solid rgba(249,212,35,0.4)",
+                  color: "#f9d423",
+                  minHeight: "38px",
+                  fontSize: "0.85rem"
                 }}
               >
-                🏠 Volver al Home
+                🏠 Home
               </button>
             </div>
           </div>
