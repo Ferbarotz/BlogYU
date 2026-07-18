@@ -18,6 +18,8 @@ const NewPost = () => {
   const [previews, setPreviews]     = useState([]);
   const [category, setCategory]     = useState(DEFAULT_CATEGORIES[0]?.id || "otros");
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [categoryQuery, setCategoryQuery] = useState(DEFAULT_CATEGORIES[0]?.name || "");
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState(null);
   const [dragOver, setDragOver]     = useState(false);
@@ -34,11 +36,9 @@ const NewPost = () => {
         if (Array.isArray(data) && data.length > 0) {
           const normalized = mergeCategoryData(data);
           setCategories(normalized);
-          setCategory((prev) => prev || normalized[0]?.id || "otros");
         }
       } catch {
         setCategories(DEFAULT_CATEGORIES);
-        setCategory(DEFAULT_CATEGORIES[0].id);
       }
     };
     fetchCategories();
@@ -129,6 +129,26 @@ const NewPost = () => {
     }
   };
 
+  // --- Autocompletar de categoría ---
+  const selectedMeta = getCategoryMeta(category);
+  const query = categoryQuery.trim().toLowerCase();
+  const filteredCategories = query
+    ? categories.filter((c) => {
+        const meta = getCategoryMeta(c.id);
+        return (
+          (meta.name || "").toLowerCase().includes(query) ||
+          (meta.description || "").toLowerCase().includes(query)
+        );
+      })
+    : categories;
+
+  const handleSelectCategory = (c) => {
+    const meta = getCategoryMeta(c.id);
+    setCategory(c.id);
+    setCategoryQuery(meta.name);
+    setShowSuggestions(false);
+  };
+
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
 
@@ -187,54 +207,156 @@ const NewPost = () => {
             />
           </div>
 
-          {/* CATEGORÍA - same style as MyPosts */}
-          <div style={{ marginBottom: "20px" }}>
+          {/* CATEGORÍA - autocompletar */}
+          <div style={{ marginBottom: "20px", position: "relative" }}>
             <label style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "10px", display: "block" }}>
               Categoría *
             </label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-              {categories.map((c) => {
-                const meta = getCategoryMeta(c.id);
-                const isActive = category === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setCategory(c.id)}
-                    className="d-inline-flex align-items-center gap-2"
-                    style={{
-                      padding: "9px 14px",
-                      borderRadius: "14px",
-                      fontSize: "0.82rem",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
-                      background: isActive ? `${meta.color}22` : "rgba(255,255,255,0.03)",
-                      border: `1px solid ${isActive ? meta.color : "rgba(255,255,255,0.12)"}`,
-                      color: isActive ? "#fff" : "rgba(255,255,255,0.72)",
-                      fontWeight: isActive ? "700" : "500",
-                      boxShadow: isActive ? `0 6px 18px ${meta.color}55` : "none"
-                    }}
-                    title={meta.description}
-                  >
-                    <span
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: "50%",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        background: meta.color,
-                        color: "#fff",
-                        fontSize: "0.75rem"
-                      }}
-                    >
-                      <i className={`bi ${meta.icon}`} />
-                    </span>
-                    <span>{meta.name}</span>
-                  </button>
-                );
-              })}
+
+            <div style={{ position: "relative" }}>
+              {/* Icono de la categoría seleccionada */}
+              <span
+                style={{
+                  position: "absolute",
+                  left: "14px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 26,
+                  height: 26,
+                  borderRadius: "50%",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: selectedMeta.color,
+                  color: "#fff",
+                  fontSize: "0.8rem",
+                  pointerEvents: "none",
+                  zIndex: 2
+                }}
+              >
+                <i className={`bi ${selectedMeta.icon}`} />
+              </span>
+
+              <input
+                value={categoryQuery}
+                onChange={(e) => {
+                  setCategoryQuery(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={(e) => {
+                  setShowSuggestions(true);
+                  e.target.style.border = "1px solid rgba(0,242,254,0.45)";
+                }}
+                onBlur={(e) => {
+                  // Delay para permitir el click en una sugerencia
+                  setTimeout(() => setShowSuggestions(false), 150);
+                  e.target.style.border = "1px solid rgba(255,255,255,0.06)";
+                }}
+                placeholder="Escribe para buscar: restaurante, museo, hotel..."
+                autoComplete="off"
+                style={{
+                  width: "100%",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: "12px",
+                  color: "#fff",
+                  padding: "14px 44px 14px 50px",
+                  fontSize: "1rem",
+                  outline: "none",
+                  boxSizing: "border-box",
+                  transition: "border 0.2s"
+                }}
+              />
+
+              {/* Flecha desplegable */}
+              <span
+                onClick={() => setShowSuggestions((s) => !s)}
+                style={{
+                  position: "absolute",
+                  right: "14px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "rgba(255,255,255,0.4)",
+                  cursor: "pointer",
+                  fontSize: "0.9rem",
+                  zIndex: 2
+                }}
+              >
+                <i className={`bi bi-chevron-${showSuggestions ? "up" : "down"}`} />
+              </span>
+
+              {/* Lista de sugerencias */}
+              {showSuggestions && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    left: 0,
+                    right: 0,
+                    background: "#161b22",
+                    border: "1px solid rgba(0,242,254,0.2)",
+                    borderRadius: "12px",
+                    boxShadow: "0 12px 30px rgba(0,0,0,0.5)",
+                    zIndex: 10,
+                    maxHeight: "260px",
+                    overflowY: "auto",
+                    padding: "6px"
+                  }}
+                >
+                  {filteredCategories.length === 0 ? (
+                    <div style={{ padding: "12px 14px", color: "rgba(255,255,255,0.4)", fontSize: "0.85rem" }}>
+                      Sin coincidencias. Prueba con otra palabra.
+                    </div>
+                  ) : (
+                    filteredCategories.map((c) => {
+                      const meta = getCategoryMeta(c.id);
+                      const isActive = category === c.id;
+                      return (
+                        <div
+                          key={c.id}
+                          onMouseDown={(e) => { e.preventDefault(); handleSelectCategory(c); }}
+                          className="d-flex align-items-center gap-3"
+                          style={{
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            cursor: "pointer",
+                            transition: "background 0.15s",
+                            background: isActive ? `${meta.color}22` : "transparent"
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.background = `${meta.color}18`}
+                          onMouseOut={(e) => e.currentTarget.style.background = isActive ? `${meta.color}22` : "transparent"}
+                        >
+                          <span
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: "50%",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: meta.color,
+                              color: "#fff",
+                              fontSize: "0.9rem",
+                              flexShrink: 0
+                            }}
+                          >
+                            <i className={`bi ${meta.icon}`} />
+                          </span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ color: "#fff", fontWeight: 600, fontSize: "0.9rem" }}>{meta.name}</div>
+                            <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.75rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {meta.description}
+                            </div>
+                          </div>
+                          {isActive && (
+                            <i className="bi bi-check-lg" style={{ marginLeft: "auto", color: meta.color, fontSize: "1.1rem" }} />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

@@ -2,44 +2,11 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
 import PostCard from "../components/PostCard";
-import { getCategoryFilters, mergeCategoryData, getCategoryMeta } from "../utils/categories";
-
-const DEFAULT_CATEGORIES = getCategoryFilters();
-
-const normalizeCategory = (cat) => {
-  if (!cat) return "";
-  if (typeof cat === "string") return cat.trim().toLowerCase();
-  if (typeof cat === "object" && cat !== null) return (cat.id || cat.name || "").toString().trim().toLowerCase();
-  return "";
-};
 
 const MyPosts = () => {
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
-  const [filtered, setFiltered] = useState([]);
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [activeCategory, setActiveCategory] = useState("todos");
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    const fetchCategories = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/categories`);
-        if (!res.ok) throw new Error("no categories endpoint");
-        const data = await res.json();
-        if (!mounted) return;
-        if (Array.isArray(data) && data.length) {
-          const normalized = getCategoryFilters(mergeCategoryData(data));
-          setCategories(normalized);
-        }
-      } catch (e) {
-        console.warn("Usando categorías por defecto.");
-      }
-    };
-    fetchCategories();
-    return () => { mounted = false; };
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -97,11 +64,6 @@ const MyPosts = () => {
     fetchMyPosts();
     return () => { mounted = false; };
   }, [navigate]);
-
-  useEffect(() => {
-    if (activeCategory === "todos") setFiltered(posts);
-    else setFiltered(posts.filter(p => normalizeCategory(p.category) === activeCategory.toLowerCase()));
-  }, [activeCategory, posts]);
 
   const handleDelete = async (postId) => {
     if (!window.confirm("¿Eliminar esta publicación? Esta acción no se puede deshacer.")) return;
@@ -162,51 +124,18 @@ const MyPosts = () => {
       </div>
 
       <div className="container py-5" style={{ maxWidth: "1200px" }}>
-        <div className="d-flex justify-content-center flex-wrap gap-2 mb-5">
-          {categories.map((cat) => {
-            const meta = getCategoryMeta(cat.id);
-            const isActive = activeCategory === cat.id;
-            const color = cat.id === "todos" ? "#00f2fe" : (cat.color || meta.color);
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className="btn rounded-pill px-3 py-2 fw-bold d-inline-flex align-items-center gap-2"
-                style={
-                  isActive
-                    ? {
-                        background: `${color}22`,
-                        border: `1px solid ${color}`,
-                        color: "#fff",
-                        boxShadow: `0 0 16px ${color}66`
-                      }
-                    : {
-                        background: "rgba(255,255,255,0.02)",
-                        border: `1px solid ${color}66`,
-                        color: "rgba(255,255,255,0.8)"
-                      }
-                }
-                title={meta.description}
-              >
-                <i className={`bi ${cat.icon || meta.icon || "bi-tag"}`} />
-                <span>{cat.name}</span>
-              </button>
-            );
-          })}
-        </div>
-
         <div className="d-flex align-items-center mb-4">
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to right, transparent, rgba(0,242,254,0.3))" }} />
           <span className="mx-3 fw-bold text-uppercase" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "3px", fontSize: "0.75rem" }}>
-            {activeCategory === "todos" ? "Todas mis publicaciones" : `Mis posts · ${categories.find((c) => c.id === activeCategory)?.name || activeCategory}`}
+            Todas mis publicaciones{posts.length > 0 ? ` · ${posts.length}` : ""}
           </span>
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
         </div>
 
-        {filtered.length === 0 ? (
+        {posts.length === 0 ? (
           <div className="text-center py-5">
             <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>
-              No tienes publicaciones en "{activeCategory}" todavía.
+              No tienes publicaciones todavía.
             </p>
             <button
               onClick={() => navigate("/new-post")}
@@ -222,7 +151,7 @@ const MyPosts = () => {
           </div>
         ) : (
           <div className="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-            {filtered.map(post => (
+            {posts.map(post => (
               <div className="col" key={post.id}>
                 <PostCard
                   post={post}
