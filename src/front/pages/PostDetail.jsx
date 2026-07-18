@@ -220,51 +220,58 @@ const PostDetail = () => {
           </div>
         </div>
 
-        {/* GALERÍA DE IMÁGENES */}
+        {/* GALERÍA DE IMÁGENES — miniaturas compactas */}
         {images.length > 0 && (
           <div className="mb-5">
-            <h5 className="mb-3 d-flex align-items-center gap-2" style={{ color: C_START, fontSize: "1.3rem" }}>
-              <span>📸</span>
-              Galería
-              <span style={{ fontSize: "0.8rem", fontWeight: 400, color: "rgba(255,255,255,0.5)", background: "rgba(0,242,254,0.1)", padding: "4px 12px", borderRadius: "12px" }}>
-                {images.length} {images.length === 1 ? 'foto' : 'fotos'}
-              </span>
-            </h5>
+            <div className="mb-2 d-flex align-items-center gap-2" style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.8rem", fontWeight: 600 }}>
+              <span style={{ fontSize: "1rem" }}>📸</span>
+              {images.length} {images.length === 1 ? 'foto' : 'fotos'}
+              {images.length > 1 && (
+                <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.35)" }}>· toca para ampliar</span>
+              )}
+            </div>
 
+            {/* Tira horizontal scrollable de miniaturas */}
             <div style={{
-              display: "grid",
-              gridTemplateColumns: images.length === 1 ? "1fr" : "repeat(auto-fill, minmax(140px, 1fr))",
-              gap: "12px",
-              maxWidth: "800px"
+              display: "flex",
+              gap: "8px",
+              overflowX: "auto",
+              paddingBottom: "6px",
+              /* scrollbar delgado */
+              scrollbarWidth: "thin",
+              scrollbarColor: "rgba(0,242,254,0.3) transparent"
             }}>
               {images.map((src, i) => (
                 <div
                   key={i}
+                  onClick={() => openModal(i)}
                   style={{
-                    position: "relative",
-                    aspectRatio: "1/1",
-                    borderRadius: "12px",
+                    flexShrink: 0,
+                    width: "90px",
+                    height: "90px",
+                    borderRadius: "10px",
                     overflow: "hidden",
                     cursor: "pointer",
-                    border: i === 0 ? `2px solid ${C_START}` : "1px solid rgba(0,242,254,0.2)",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-                    transition: "all 0.3s ease"
+                    border: `1.5px solid rgba(0,242,254,0.25)`,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                    transition: "all 0.25s ease"
                   }}
                   onMouseOver={e => {
-                    e.currentTarget.style.transform = "scale(1.02)";
-                    e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,242,254,0.3)";
+                    e.currentTarget.style.transform = "scale(1.08)";
+                    e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,242,254,0.4)";
+                    e.currentTarget.style.borderColor = C_START;
                   }}
                   onMouseOut={e => {
                     e.currentTarget.style.transform = "scale(1)";
-                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+                    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+                    e.currentTarget.style.borderColor = "rgba(0,242,254,0.25)";
                   }}
-                  onClick={() => openModal(i)}
                 >
                   <img
                     src={src}
                     alt={`Foto ${i + 1}`}
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={(e) => { e.target.src = "https://placehold.co/400x400?text=Sin+imagen"; }}
+                    onError={(e) => { e.target.src = "https://placehold.co/200?text=Sin+imagen"; }}
                   />
                 </div>
               ))}
@@ -404,39 +411,103 @@ const PostDetail = () => {
           </div>
         </div>
 
-        {/* Modal fotos ampliadas */}
+        {/* Modal fotos ampliadas con navegación */}
         {modalOpen && (
           <div
             onClick={closeModal}
             style={{
               position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: "rgba(0, 15, 30, 0.95)",
-              display: "flex", justifyContent: "center", alignItems: "center",
-              zIndex: 9999, cursor: "pointer", backdropFilter: "blur(8px)"
+              backgroundColor: "rgba(0, 10, 20, 0.96)",
+              display: "flex", flexDirection: "column",
+              justifyContent: "center", alignItems: "center",
+              zIndex: 9999, cursor: "pointer", backdropFilter: "blur(12px)"
             }}
           >
-            <button
-              onClick={prevPhoto}
-              style={{ position: "absolute", left: "20px", top: "50%", transform: "translateY(-50%)", fontSize: "2.5rem", color: C_START, background: "none", border: "none", cursor: "pointer", userSelect: "none" }}
-              aria-label="Foto anterior"
-            >
-              ‹
-            </button>
+            {/* Contador y cierre */}
+            <div style={{
+              position: "absolute", top: "16px", left: 0, right: 0,
+              display: "flex", justifyContent: "center", alignItems: "center", gap: "12px"
+            }}>
+              <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", fontWeight: 600, letterSpacing: "1px" }}>
+                {modalImgIndex + 1} / {images.length}
+              </span>
+              <button
+                onClick={closeModal}
+                style={{
+                  background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)",
+                  color: "#fff", borderRadius: "50%", width: "32px", height: "32px",
+                  cursor: "pointer", fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center"
+                }}
+                aria-label="Cerrar"
+              >✕</button>
+            </div>
 
+            {/* Flecha izquierda */}
+            {images.length > 1 && (
+              <button
+                onClick={prevPhoto}
+                style={{
+                  position: "absolute", left: "16px", top: "50%", transform: "translateY(-50%)",
+                  background: "rgba(0,242,254,0.15)", border: "1px solid rgba(0,242,254,0.35)",
+                  color: C_START, borderRadius: "50%", width: "44px", height: "44px",
+                  cursor: "pointer", fontSize: "1.4rem", display: "flex", alignItems: "center", justifyContent: "center",
+                  zIndex: 1, transition: "all 0.2s ease"
+                }}
+                onMouseOver={e => e.currentTarget.style.background = "rgba(0,242,254,0.3)"}
+                onMouseOut={e => e.currentTarget.style.background = "rgba(0,242,254,0.15)"}
+                aria-label="Foto anterior"
+              >‹</button>
+            )}
+
+            {/* Imagen ampliada */}
             <img
               src={images[modalImgIndex]}
-              alt={`Foto ampliada ${modalImgIndex + 1}`}
-              style={{ maxHeight: "80vh", maxWidth: "80vw", borderRadius: "16px", boxShadow: "0 0 30px #00f2fe" }}
+              alt={`Foto ${modalImgIndex + 1}`}
+              style={{
+                maxHeight: "80vh", maxWidth: "88vw",
+                borderRadius: "14px",
+                boxShadow: `0 0 40px rgba(0,242,254,0.25)`,
+                objectFit: "contain"
+              }}
               onClick={e => e.stopPropagation()}
             />
 
-            <button
-              onClick={nextPhoto}
-              style={{ position: "absolute", right: "20px", top: "50%", transform: "translateY(-50%)", fontSize: "2.5rem", color: C_START, background: "none", border: "none", cursor: "pointer", userSelect: "none" }}
-              aria-label="Foto siguiente"
-            >
-              ›
-            </button>
+            {/* Flecha derecha */}
+            {images.length > 1 && (
+              <button
+                onClick={nextPhoto}
+                style={{
+                  position: "absolute", right: "16px", top: "50%", transform: "translateY(-50%)",
+                  background: "rgba(0,242,254,0.15)", border: "1px solid rgba(0,242,254,0.35)",
+                  color: C_START, borderRadius: "50%", width: "44px", height: "44px",
+                  cursor: "pointer", fontSize: "1.4rem", display: "flex", alignItems: "center", justifyContent: "center",
+                  zIndex: 1, transition: "all 0.2s ease"
+                }}
+                onMouseOver={e => e.currentTarget.style.background = "rgba(0,242,254,0.3)"}
+                onMouseOut={e => e.currentTarget.style.background = "rgba(0,242,254,0.15)"}
+                aria-label="Foto siguiente"
+              >›</button>
+            )}
+
+            {/* Puntos indicadores */}
+            {images.length > 1 && (
+              <div style={{ position: "absolute", bottom: "20px", display: "flex", gap: "6px" }}>
+                {images.map((_, i) => (
+                  <div
+                    key={i}
+                    onClick={e => { e.stopPropagation(); setModalImgIndex(i); }}
+                    style={{
+                      width: i === modalImgIndex ? "20px" : "8px",
+                      height: "8px",
+                      borderRadius: "4px",
+                      background: i === modalImgIndex ? C_START : "rgba(255,255,255,0.3)",
+                      cursor: "pointer",
+                      transition: "all 0.3s ease"
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
