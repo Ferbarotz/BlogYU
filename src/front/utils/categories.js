@@ -4,42 +4,42 @@ export const CATEGORIES = [
   {
     id: "hoteles",
     name: "Hoteles",
-    icon: "bi-building",
+    icon: "🏨",
     color: "#4f46e5",
     description: "Alojamientos recomendados para cada presupuesto."
   },
   {
     id: "restaurantes",
     name: "Restaurantes",
-    icon: "bi-utensils",
+    icon: "🍽️",
     color: "#ef4444",
     description: "Sabores locales, gourmet y rincones gastronómicos."
   },
   {
     id: "bares",
     name: "Bares",
-    icon: "bi-cup-straw",
+    icon: "🍺",
     color: "#f59e0b",
     description: "Coctelería, tapas y ambiente para disfrutar de noche."
   },
   {
     id: "lugares",
     name: "Lugares",
-    icon: "bi-geo-alt",
+    icon: "🗺️",
     color: "#10b981",
     description: "Sitios imprescindibles para visitar y descubrir."
   },
   {
     id: "cultura",
     name: "Cultura",
-    icon: "bi-bank",
+    icon: "🎭",
     color: "#8b5cf6",
     description: "Museos, historia, arte y planes culturales."
   },
   {
     id: "otros",
     name: "Otros",
-    icon: "bi-grid-3x3-gap",
+    icon: "📍",
     color: "#64748b",
     description: "Recomendaciones variadas fuera de las categorías principales."
   }
@@ -48,7 +48,7 @@ export const CATEGORIES = [
 export const DEFAULT_CATEGORY_META = {
   id: "otros",
   name: "Otros",
-  icon: "bi-tag",
+  icon: "📍",
   color: "#64748b",
   description: "Descubre más recomendaciones de la comunidad."
 };
