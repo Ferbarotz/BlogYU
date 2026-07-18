@@ -41,13 +41,13 @@ const Register = () => {
 
   return (
     <div
-      style={{ minHeight: "100vh", background: "#120b21" }} // Morado muy oscuro
+      style={{ minHeight: "100vh", background: "#0d1117" }} // Fondo oscuro de marca
       className="d-flex align-items-center justify-content-center p-4"
     >
-      {/* Fondo decorativo con luces púrpuras */}
+      {/* Fondo decorativo con luces azules */}
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-        background: "radial-gradient(ellipse at 80% 50%, rgba(138, 43, 226, 0.08) 0%, transparent 60%), radial-gradient(ellipse at 20% 20%, rgba(75, 0, 130, 0.1) 0%, transparent 60%)",
+        background: "radial-gradient(ellipse at 80% 50%, rgba(0, 242, 254, 0.07) 0%, transparent 60%), radial-gradient(ellipse at 20% 20%, rgba(79, 172, 254, 0.08) 0%, transparent 60%)",
         pointerEvents: "none"
       }} />
 
@@ -59,7 +59,7 @@ const Register = () => {
             <h2 className="fw-black mb-0" style={{ fontSize: "2.2rem", letterSpacing: "-1px", color: "#fff" }}>
               Blog
               <span style={{
-                background: "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)", // Gradiente morado/rosa
+                background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", // Gradiente azul de marca
                 WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
               }}>
                 YU
@@ -81,10 +81,10 @@ const Register = () => {
           backdropFilter: "blur(10px)"
         }}>
 
-          {/* Línea decorativa superior (Morado a Amarillo) */}
+          {/* Línea decorativa superior (Azul a Amarillo) */}
           <div style={{
             height: "4px",
-            background: "linear-gradient(to right, #8e2de2, #4a00e0, #f9d423)"
+            background: "linear-gradient(to right, #00f2fe, #4facfe, #f9d423)"
           }} />
 
           <div className="p-4 p-md-5">
@@ -331,8 +331,8 @@ const Register = () => {
                 transition: "all 0.3s ease"
               }}
               onMouseOver={(e) => {
-                e.currentTarget.style.borderColor = "rgba(161, 140, 209, 0.5)";
-                e.currentTarget.style.color = "#a18cd1";
+                e.currentTarget.style.borderColor = "rgba(0, 242, 254, 0.5)";
+                e.currentTarget.style.color = "#00f2fe";
               }}
               onMouseOut={(e) => {
                 e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
@@ -351,7 +351,7 @@ const Register = () => {
       </div>
 
       <style>{`
-        body { background: #120b21 !important; }
+        body { background: #0d1117 !important; }
         input::placeholder { color: rgba(255,255,255,0.25) !important; }
         input:-webkit-autofill {
           -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.05) inset !important;
