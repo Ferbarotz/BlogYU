@@ -18,6 +18,7 @@ const PostDetail = () => {
   const [modalImgIndex, setModalImgIndex] = useState(0);
 
   const user = JSON.parse(localStorage.getItem("user") || "null");
+  const isLoggedIn = !!user; // true si hay sesión activa
 
   const getImages = (data) => {
     if (!data) return [];
@@ -382,22 +383,35 @@ const PostDetail = () => {
           onMouseOut={e => e.currentTarget.style.opacity = 0.72}
         >
           <div className="d-flex gap-2">
-            <button
-              type="button"
-              onClick={() => navigate('/my-posts')}
-              className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
-              style={{ background: "transparent", border: "1px solid rgba(0,242,254,0.3)", color: C_START, minHeight: "38px", fontSize: "0.85rem" }}
-            >
-              ← Mis publicaciones
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
-              style={{ background: "rgba(0,242,254,0.12)", border: "1px solid rgba(0,242,254,0.4)", color: C_START, minHeight: "38px", fontSize: "0.85rem" }}
-            >
-              🏠 Home
-            </button>
+            {isLoggedIn ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate('/my-posts')}
+                  className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
+                  style={{ background: "transparent", border: "1px solid rgba(0,242,254,0.3)", color: C_START, minHeight: "38px", fontSize: "0.85rem" }}
+                >
+                  ← Mis publicaciones
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="btn btn-sm fw-semibold rounded-pill flex-grow-1"
+                  style={{ background: "rgba(0,242,254,0.12)", border: "1px solid rgba(0,242,254,0.4)", color: C_START, minHeight: "38px", fontSize: "0.85rem" }}
+                >
+                  🏠 Home
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="btn btn-sm fw-semibold rounded-pill w-100"
+                style={{ background: "rgba(0,242,254,0.12)", border: "1px solid rgba(0,242,254,0.4)", color: C_START, minHeight: "38px", fontSize: "0.85rem" }}
+              >
+                🏠 Volver al Home
+              </button>
+            )}
           </div>
         </div>
 

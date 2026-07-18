@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 
 const Footer = () => {
   const year = new Date().getFullYear();
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const isLoggedIn = !!user;
 
   const linkStyle = {
     color: "rgba(255,255,255,0.55)",
@@ -112,66 +114,78 @@ const Footer = () => {
               Cuenta
             </h6>
             <ul className="list-unstyled d-flex flex-column gap-1 mb-0">
-              <li>
-                <Link to="/login" className="footer-link" style={linkStyle}>Iniciar sesión</Link>
-              </li>
-              <li>
-                <Link to="/register" className="footer-link" style={linkStyle}>Registrarse</Link>
-              </li>
-              <li>
-                <Link to="/my-routes" className="footer-link" style={linkStyle}>Mis rutas</Link>
-              </li>
-              <li>
-                <Link to="/my-posts" className="footer-link" style={linkStyle}>Mis posts</Link>
-              </li>
+              {!isLoggedIn ? (
+                <>
+                  <li>
+                    <Link to="/login" className="footer-link" style={linkStyle}>Iniciar sesión</Link>
+                  </li>
+                  <li>
+                    <Link to="/register" className="footer-link" style={linkStyle}>Registrarse</Link>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <Link to="/profile" className="footer-link" style={linkStyle}>Mi perfil</Link>
+                  </li>
+                  <li>
+                    <Link to="/my-routes" className="footer-link" style={linkStyle}>Mis rutas</Link>
+                  </li>
+                  <li>
+                    <Link to="/my-posts" className="footer-link" style={linkStyle}>Mis posts</Link>
+                  </li>
+                </>
+              )}
             </ul>
           </div>
 
-          {/* Contenido / CTA */}
-          <div className="col-lg-4 col-md-6">
-            <h6
-              style={{
-                color: "rgba(255,255,255,0.9)",
-                textTransform: "uppercase",
-                letterSpacing: "2px",
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                marginBottom: "14px",
-              }}
-            >
-              Crea y comparte
-            </h6>
-            <div className="d-flex flex-wrap gap-2">
-              <Link
-                to="/new-post"
-                className="fw-bold"
+          {/* Contenido / CTA - Solo para usuarios logueados */}
+          {isLoggedIn && (
+            <div className="col-lg-4 col-md-6">
+              <h6
                 style={{
-                  background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-                  color: "#000",
-                  padding: "8px 18px",
-                  borderRadius: "50px",
-                  textDecoration: "none",
-                  fontSize: "0.85rem",
+                  color: "rgba(255,255,255,0.9)",
+                  textTransform: "uppercase",
+                  letterSpacing: "2px",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  marginBottom: "14px",
                 }}
               >
-                ✍️ Nueva publicación
-              </Link>
-              <Link
-                to="/create-route"
-                className="fw-bold"
-                style={{
-                  background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
-                  color: "#000",
-                  padding: "8px 18px",
-                  borderRadius: "50px",
-                  textDecoration: "none",
-                  fontSize: "0.85rem",
-                }}
-              >
-                🗺️ Nueva ruta
-              </Link>
+                Crea y comparte
+              </h6>
+              <div className="d-flex flex-wrap gap-2">
+                <Link
+                  to="/new-post"
+                  className="fw-bold"
+                  style={{
+                    background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
+                    color: "#000",
+                    padding: "8px 18px",
+                    borderRadius: "50px",
+                    textDecoration: "none",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  ✍️ Nueva publicación
+                </Link>
+                <Link
+                  to="/create-route"
+                  className="fw-bold"
+                  style={{
+                    background: "linear-gradient(135deg, #f9d423 0%, #ff4e50 100%)",
+                    color: "#000",
+                    padding: "8px 18px",
+                    borderRadius: "50px",
+                    textDecoration: "none",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  🗺️ Nueva ruta
+                </Link>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Barra inferior */}
