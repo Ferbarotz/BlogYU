@@ -132,7 +132,6 @@ const PostDetail = () => {
         }}>
           <h2 style={{ fontWeight: "900", fontSize: "2rem", marginBottom: "0.5rem", color: "#00f2fe" }}>{post.title}</h2>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", color: "#a0cfff", fontSize: "0.9rem" }}>
-            <span>📍 <span style={{ color: "#f9d423" }}>{post.category || "Sin categoría"}</span></span>
             <span>📅 {new Date(post.created_at).toLocaleDateString("es-ES", { year: "numeric", month: "long", day: "numeric" })}</span>
             <span>✍️ Por <Link to={`/profile/${post.author?.id}`} style={{ color: "#f9d423", fontWeight: "600" }}>{post.author?.name || post.author?.email || "Anónimo"}</Link></span>
           </div>
