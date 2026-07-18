@@ -16,9 +16,9 @@ const NewPost = () => {
   const [content, setContent]       = useState("");
   const [imageFiles, setImageFiles] = useState([]);
   const [previews, setPreviews]     = useState([]);
-  const [category, setCategory]     = useState(DEFAULT_CATEGORIES[0]?.id || "otros");
+  const [category, setCategory]     = useState(""); // Empieza sin selección
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [categoryQuery, setCategoryQuery] = useState(DEFAULT_CATEGORIES[0]?.name || "");
+  const [categoryQuery, setCategoryQuery] = useState(""); // Empieza vacío
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState(null);
@@ -130,6 +130,7 @@ const NewPost = () => {
   };
 
   // --- Autocompletar de categoría ---
+  const hasCategory = !!category;
   const selectedMeta = getCategoryMeta(category);
   const query = categoryQuery.trim().toLowerCase();
   const filteredCategories = query
@@ -214,7 +215,7 @@ const NewPost = () => {
             </label>
 
             <div style={{ position: "relative" }}>
-              {/* Icono de la categoría seleccionada */}
+              {/* Icono de la categoría seleccionada (o lupa si no hay ninguna) */}
               <span
                 style={{
                   position: "absolute",
@@ -227,14 +228,14 @@ const NewPost = () => {
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  background: selectedMeta.color,
-                  color: "#fff",
-                  fontSize: "0.8rem",
+                  background: hasCategory ? selectedMeta.color : "transparent",
+                  color: hasCategory ? "#fff" : "rgba(255,255,255,0.4)",
+                  fontSize: hasCategory ? "0.85rem" : "1rem",
                   pointerEvents: "none",
                   zIndex: 2
                 }}
               >
-                <i className={`bi ${selectedMeta.icon}`} />
+                <i className={`bi ${hasCategory ? selectedMeta.icon : "bi-search"}`} />
               </span>
 
               <input
