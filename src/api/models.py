@@ -201,6 +201,8 @@ class RouteStep(db.Model):
     description = db.Column(db.Text)
     rating = db.Column(db.Integer, default=5)
     location = db.Column(db.String(200))
+    lat = db.Column(db.Float)
+    lng = db.Column(db.Float)
     route_id = db.Column(db.Integer, db.ForeignKey("travel_route.id"), nullable=False)
 
     images = db.relationship(
@@ -218,6 +220,8 @@ class RouteStep(db.Model):
             "description": self.description,
             "rating": self.rating,
             "location": self.location,
+            "lat": self.lat,
+            "lng": self.lng,
             "route_id": self.route_id,
             "images": [img.serialize() for img in self.images]
         }

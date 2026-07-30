@@ -59,7 +59,7 @@ function PlaceSearchInput({ value, onChange, placeholder, inputStyle }) {
 
   const handleChange = (e) => {
     setInputVal(e.target.value);
-    onChange(e.target.value);
+    onChange(e.target.value, null);
     setOpen(true);
   };
 
@@ -67,7 +67,9 @@ function PlaceSearchInput({ value, onChange, placeholder, inputStyle }) {
     // Nombre legible: nombre del lugar o display_name resumido
     const name = item.display_name.split(',').slice(0, 3).join(', ');
     setInputVal(name);
-    onChange(name);
+    const lat = item.lat != null ? parseFloat(item.lat) : null;
+    const lng = item.lon != null ? parseFloat(item.lon) : null;
+    onChange(name, { lat, lng });
     setOpen(false);
   };
 
@@ -197,7 +199,7 @@ const CreateRoute = () => {
   const addExperience = (type) => {
     setExperiences(prev => [
       ...prev,
-      { type, title: '', description: '', rating: 5, location: '', icon: icons[type] || '📍', images: [] }
+      { type, title: '', description: '', rating: 5, location: '', lat: null, lng: null, icon: icons[type] || '📍', images: [] }
     ]);
   };
 
@@ -457,7 +459,13 @@ const CreateRoute = () => {
                     </label>
                     <PlaceSearchInput
                       value={exp.location}
-                      onChange={(val) => handleExpChange(index, 'location', val)}
+                      onChange={(val, coords) => {
+                        handleExpChange(index, 'location', val);
+                        if (coords) {
+                          handleExpChange(index, 'lat', coords.lat);
+                          handleExpChange(index, 'lng', coords.lng);
+                        }
+                      }}
                       placeholder={`Busca la ubicación del ${exp.type}...`}
                       inputStyle={inputBase}
                     />

@@ -1,4 +1,5 @@
 import os
+import logging
 import click
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
@@ -13,32 +14,38 @@ def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
+    if not app.debug:
+        logging.basicConfig(level=logging.INFO)
+
     try:
         os.makedirs(app.instance_path, exist_ok=True)
     except Exception:
-        pass
+        app.logger.exception("No se pudo crear instance_path (%s)", app.instance_path)
 
+    # Extensiones. Si alguna falla, lo registramos con traceback en vez de silenciarlo.
     db.init_app(app)
     migrate.init_app(app, db)
-
-    try:
-        jwt.init_app(app)
-    except Exception:
-        pass
-
-    try:
-        bcrypt.init_app(app)
-    except Exception:
-        pass
-
+    jwt.init_app(app)
+    bcrypt.init_app(app)
     try:
         mail.init_app(app)
     except Exception:
-        pass
+        # El correo no es crítico para arrancar; se registra pero no se aborta.
+        app.logger.exception("Error inicializando Flask-Mail; el envío de correos no funcionará")
+
+    # Orígenes CORS: en prod se restringen vía CORS_ORIGINS (lista separada por
+    # comas) o, en su defecto, FRONTEND_URL. En dev se permite todo ("*").
+    _cors_env = os.environ.get("CORS_ORIGINS")
+    if _cors_env:
+        cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+    elif not app.config.get("AUTO_CREATE_DB"):  # heurística: prod
+        cors_origins = [app.config.get("FRONTEND_URL", "*")]
+    else:
+        cors_origins = "*"
 
     CORS(
         app,
-        resources={r"/api/*": {"origins": "*"}},
+        resources={r"/api/*": {"origins": cors_origins}},
         supports_credentials=False,
         allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
         expose_headers=["Authorization"],
@@ -47,11 +54,14 @@ def create_app():
 
     app.register_blueprint(api, url_prefix="/api")
 
-    with app.app_context():
-        try:
-            db.create_all()
-        except Exception:
-            pass
+    # Crear tablas automáticamente solo en desarrollo. En producción la fuente de
+    # verdad del esquema es Alembic (flask db upgrade), no create_all().
+    if app.config.get("AUTO_CREATE_DB"):
+        with app.app_context():
+            try:
+                db.create_all()
+            except Exception:
+                app.logger.exception("Error en db.create_all()")
 
     @app.cli.command("create-admin")
     @click.option("--email", prompt=True, help="Email del administrador")
@@ -62,11 +72,10 @@ def create_app():
             click.echo(f"Ya existe un usuario con email {email}")
             return
 
-        pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
         admin = User(
             name=name,
             email=email,
-            password=pw_hash,
+            password=password,
             is_admin=True,
             is_active=True
         )
