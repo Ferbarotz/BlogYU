@@ -1,1 +1,26 @@
-node_modules
+# Dependencias
+node_modules/
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Entorno / secretos
+.env
+.env.*
+!.env.example
+
+# Base de datos e instancia (dev)
+instance/
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Sistema
+.DS_Store

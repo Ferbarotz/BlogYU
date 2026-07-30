@@ -23,6 +23,28 @@ export function StoreProvider({ children }) {
     else localStorage.removeItem("user");
   }, [user]);
 
+  // Mantener el Context sincronizado con localStorage cuando otras partes de la
+  // app (Login, Navbar, logout) escriben el token/usuario y disparan "authChange".
+  useEffect(() => {
+    const sync = () => {
+      const t = localStorage.getItem("token") || null;
+      let u = null;
+      try {
+        u = JSON.parse(localStorage.getItem("user") || "null");
+      } catch {
+        u = null;
+      }
+      setToken(t);
+      setUser(u);
+    };
+    window.addEventListener("authChange", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("authChange", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+
   return (
     <StoreContext.Provider value={{ token, setToken, user, setUser }}>
       {children}

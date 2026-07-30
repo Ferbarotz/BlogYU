@@ -23,6 +23,8 @@ const emptyStep = () => ({
   description: "",
   rating: 5,
   location: "",
+  lat: null,
+  lng: null,
   images: [],      // URLs ya subidas (strings)
   newFiles: [],      // File objects pendientes
   newPreviews: [],      // base64 previews
@@ -173,21 +175,6 @@ const EditRoute = () => {
   const [steps, setSteps] = useState([]);
   const [route, setRoute] = useState(null); // Estado para la ruta completa
 
-  // Estado para almacenar archivos válidos en uploads
-  const [validUploads, setValidUploads] = useState(new Set());
-
-  // ── Obtener lista de archivos válidos en uploads ──
-  useEffect(() => {
-    fetch(`${API_BASE}/api/uploads/list`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.files) {
-          setValidUploads(new Set(data.files));
-        }
-      })
-      .catch(console.error);
-  }, []);
-
   // ── Cargar ruta ──
   useEffect(() => {
     const fetchRoute = async () => {
@@ -211,6 +198,8 @@ const EditRoute = () => {
           description: s.description || "",
           rating: s.rating || 5,
           location: s.location || "",
+          lat: s.lat ?? null,
+          lng: s.lng ?? null,
           images: (() => {
             const raw = s.images || [];
             const urls = raw.map(img => {
@@ -239,23 +228,6 @@ const EditRoute = () => {
     };
     fetchRoute();
   }, [id, navigate]);
-
-  // ── Filtrar imágenes inválidas cuando cargue la ruta y lista uploads ──
-  useEffect(() => {
-    if (!loading && validUploads.size > 0) {
-      setSteps(prevSteps => prevSteps.map(step => {
-        const filteredImages = step.images.filter(url => {
-          try {
-            const filename = url.split('/').pop();
-            return validUploads.has(filename);
-          } catch {
-            return false;
-          }
-        });
-        return { ...step, images: filteredImages };
-      }));
-    }
-  }, [loading, validUploads]);
 
   // ── Helpers steps ──
   const updateStep = (idx, patch) =>
@@ -371,13 +343,14 @@ const EditRoute = () => {
           description: step.description,
           rating: step.rating,
           location: step.location,
+          lat: step.lat ?? null,
+          lng: step.lng ?? null,
           keep_image_urls: step.images,  // imágenes existentes que se conservan
           new_images: uploadedUrls,      // imágenes nuevas subidas
         });
       }
 
       const payload = { ...form, steps: stepsPayload };
-      console.log("Payload a enviar en update_route:", payload);
 
       const res = await fetch(`${API_BASE}/api/routes/${id}`, {
         method: "PUT",
