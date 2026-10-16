@@ -251,3 +251,12 @@ class Favorite(db.Model):
     __table_args__ = (
         db.UniqueConstraint('user_id', 'item_type', 'item_id', name='uq_user_item_favorite'),
     )
+
+
+
+class TokenBlocklist(db.Model):
+    """Tokens JWT invalidados al hacer logout."""
+    __tablename__ = "token_blocklist"
+    id         = db.Column(db.Integer, primary_key=True)
+    jti        = db.Column(db.String(36), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

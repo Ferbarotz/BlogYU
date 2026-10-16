@@ -5,7 +5,7 @@ from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
 from .config import Config
-from .extensions import db, bcrypt, mail, jwt, migrate
+from .extensions import db, bcrypt, mail, jwt, migrate, limiter
 from .routes import api
 from .models import User
 
@@ -27,21 +27,42 @@ def create_app():
     migrate.init_app(app, db)
     jwt.init_app(app)
     bcrypt.init_app(app)
+    limiter.init_app(app)
     try:
         mail.init_app(app)
     except Exception:
         # El correo no es crítico para arrancar; se registra pero no se aborta.
         app.logger.exception("Error inicializando Flask-Mail; el envío de correos no funcionará")
 
-    # Orígenes CORS: en prod se restringen vía CORS_ORIGINS (lista separada por
-    # comas) o, en su defecto, FRONTEND_URL. En dev se permite todo ("*").
+    # JWT Blocklist: invalida tokens en logout
+    from .models import TokenBlocklist
+
+    # Crea SOLO la tabla token_blocklist si no existe (aditivo, no toca datos).
+    with app.app_context():
+        try:
+            TokenBlocklist.__table__.create(bind=db.engine, checkfirst=True)
+        except Exception:
+            app.logger.exception("No se pudo asegurar la tabla token_blocklist")
+
+    @jwt.token_in_blocklist_loader
+    def check_if_token_revoked(jwt_header, jwt_payload):
+        jti = jwt_payload.get("jti")
+        if not jti:
+            return False
+        try:
+            return db.session.query(TokenBlocklist.id).filter_by(jti=jti).scalar() is not None
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Error consultando token_blocklist")
+            return False
+
+    # CORS: nunca "*" en producción
     _cors_env = os.environ.get("CORS_ORIGINS")
     if _cors_env:
         cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
-    elif not app.config.get("AUTO_CREATE_DB"):  # heurística: prod
-        cors_origins = [app.config.get("FRONTEND_URL", "*")]
     else:
-        cors_origins = "*"
+        frontend = app.config.get("FRONTEND_URL", "")
+        cors_origins = [frontend] if frontend else ["http://localhost:3000"]
 
     CORS(
         app,

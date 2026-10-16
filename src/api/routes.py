@@ -9,11 +9,11 @@ from functools import wraps
 
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
-from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token)
+from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
 from flask_mail import Message
 
-from .extensions import db, bcrypt, mail
-from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage
+from .extensions import db, bcrypt, mail, limiter
+from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage, TokenBlocklist
 
 # Cloudinary
 import cloudinary
@@ -177,6 +177,8 @@ def api_root():
 
 # ----------------- Diagnóstico Cloudinary -----------------
 @api.route("/test-cloudinary", methods=["GET"])
+@jwt_required()
+@admin_required
 def test_cloudinary():
     url = os.environ.get("CLOUDINARY_URL", "")
     try:
@@ -206,6 +208,7 @@ def test_cloudinary():
 
 # ----------------- AUTH -----------------
 @api.route('/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     body = request.get_json(silent=True) or {}
     email = (body.get('email') or '').strip().lower()
@@ -243,7 +246,16 @@ def login():
 
     return jsonify({"token": token, "user": serialized}), 200
 
+@api.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    jti = get_jwt()["jti"]
+    db.session.add(TokenBlocklist(jti=jti))
+    db.session.commit()
+    return jsonify({"msg": "Sesion cerrada correctamente"}), 200
+
 @api.route('/register', methods=['POST'])
+@limiter.limit("5 per minute")
 def register():
     body = request.get_json(silent=True) or {}
     name = body.get('name')
@@ -251,6 +263,14 @@ def register():
     password = body.get('password')
     if not email or not password:
         return jsonify({"msg": "Email y password requeridos"}), 400
+    if len(name or "") > 120:
+        return jsonify({"msg": "El nombre no puede superar 120 caracteres"}), 400
+    if len(email) > 120:
+        return jsonify({"msg": "El email no puede superar 120 caracteres"}), 400
+    if len(password) < 8:
+        return jsonify({"msg": "La contrasena debe tener minimo 8 caracteres"}), 400
+    if len(password) > 128:
+        return jsonify({"msg": "La contrasena no puede superar 128 caracteres"}), 400
     if User.query.filter_by(email=email).first():
         return jsonify({"msg": "El usuario ya existe"}), 400
 
@@ -266,6 +286,7 @@ def register():
 
 # ----------------- PASSWORD RECOVERY -----------------
 @api.route('/forgot-password', methods=['POST'])
+@limiter.limit("5 per minute")
 def forgot_password():
     email = (request.get_json(silent=True) or {}).get('email') or request.form.get('email')
     email = (email or '').strip().lower()
@@ -421,6 +442,10 @@ def create_post():
 
     if not title or not content:
         return jsonify({"msg": "title and content required"}), 400
+    if len(title) > 250:
+        return jsonify({"msg": "El titulo no puede superar 250 caracteres"}), 400
+    if len(content) > 50000:
+        return jsonify({"msg": "El contenido no puede superar 50000 caracteres"}), 400
 
     main_image = saved_urls[0] if saved_urls else None
 
@@ -581,13 +606,22 @@ def get_comments(post_id):
     return jsonify([c.serialize() for c in comments]), 200
 
 @api.route('/posts/<int:post_id>/comments', methods=['POST'])
+@jwt_required()
 def add_comment(post_id):
     body = request.get_json(silent=True) or {}
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    author_name = user.name if user else "Usuario"
+    content = (body.get("content") or "").strip()
+    if not content:
+        return jsonify({"msg": "El comentario no puede estar vacio"}), 400
+    if len(content) > 2000:
+        return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
     new_comment = Comment(
-        content=body.get("content"),
-        author_name=body.get("author_name", "Invitado"),
+        content=content,
+        author_name=author_name,
         post_id=post_id,
-        user_id=body.get("user_id")
+        user_id=user_id
     )
     db.session.add(new_comment)
     db.session.commit()
