@@ -25,3 +25,6 @@ instance/
 # Sistema
 .DS_Store
 copia-proyecto.tar.gz
+
+# Copias de seguridad de la base de datos (contienen datos personales)
+backups/
