@@ -67,8 +67,11 @@ const PostDetail = () => {
     try {
       const res = await fetch(`${API_BASE}/api/posts/${id}/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: newComment, author_name: user?.name || "Invitado", user_id: user?.id })
+        headers: {
+          "Content-Type": "application/json",
+          ...(localStorage.getItem("token") ? { Authorization: `Bearer ${localStorage.getItem("token")}` } : {})
+        },
+        body: JSON.stringify({ content: newComment })
       });
       if (res.ok) {
         setComments([...comments, await res.json()]);
