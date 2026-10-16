@@ -19,6 +19,16 @@ def _env_int(name, default):
         return default
 
 
+def _normalize_db_url(url):
+    """Fuerza el driver psycopg2 (instalado) para PostgreSQL.
+    SQLAlchemy >= 2.1 usa psycopg v3 por defecto en 'postgresql://'."""
+    url = _clean(url)
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+    return url
+
 _INSECURE = {"dev-secret", "jwt-dev-secret", "secret", "changeme", ""}
 
 
@@ -41,10 +51,10 @@ class Config:
     SECRET_KEY     = _sk
     JWT_SECRET_KEY = _jsk
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
+    SQLALCHEMY_DATABASE_URI = _normalize_db_url(os.environ.get(
         "DATABASE_URL",
         "sqlite:///" + os.path.join(basedir, "instance", "blogyu.db")
-    )
+    ))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
