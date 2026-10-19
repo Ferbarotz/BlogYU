@@ -58,11 +58,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
-    MAIL_SERVER         = _clean(os.environ.get("MAIL_SERVER", "smtp.sendgrid.net")) or "smtp.sendgrid.net"
-    MAIL_PORT           = _env_int("MAIL_PORT", 587)
-    MAIL_USE_TLS        = _env_bool("MAIL_USE_TLS", "true")
-    MAIL_USE_SSL        = _env_bool("MAIL_USE_SSL", "false")
-    MAIL_USERNAME       = _clean(os.environ.get("MAIL_USERNAME")) or None
+    # Email: SendGrid Web API (HTTPS). MAIL_PASSWORD = API key de SendGrid.
     MAIL_PASSWORD       = (os.environ.get("MAIL_PASSWORD") or "").strip() or None
     MAIL_DEFAULT_SENDER = _clean(os.environ.get("MAIL_DEFAULT_SENDER")) or None
     MAIL_SUPPRESS_SEND  = _env_bool("MAIL_SUPPRESS_SEND", "false")

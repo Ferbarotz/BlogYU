@@ -5,7 +5,7 @@ from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
 from .config import Config
-from .extensions import db, bcrypt, mail, jwt, migrate, limiter
+from .extensions import db, bcrypt, jwt, migrate, limiter
 from .routes import api
 from .models import User
 
@@ -28,12 +28,6 @@ def create_app():
     jwt.init_app(app)
     bcrypt.init_app(app)
     limiter.init_app(app)
-    try:
-        mail.init_app(app)
-    except Exception:
-        # El correo no es crítico para arrancar; se registra pero no se aborta.
-        app.logger.exception("Error inicializando Flask-Mail; el envío de correos no funcionará")
-
     # JWT Blocklist: invalida tokens en logout
     from .models import TokenBlocklist
 
@@ -75,14 +69,7 @@ def create_app():
 
     app.register_blueprint(api, url_prefix="/api")
 
-    # Crear tablas automáticamente solo en desarrollo. En producción la fuente de
-    # verdad del esquema es Alembic (flask db upgrade), no create_all().
-    if app.config.get("AUTO_CREATE_DB"):
-        with app.app_context():
-            try:
-                db.create_all()
-            except Exception:
-                app.logger.exception("Error en db.create_all()")
+    # El esquema se gestiona SOLO con migraciones (flask db upgrade en el release de Render).
 
     @app.cli.command("create-admin")
     @click.option("--email", prompt=True, help="Email del administrador")

@@ -10,9 +10,8 @@ from functools import wraps
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
-from flask_mail import Message
 
-from .extensions import db, bcrypt, mail, limiter
+from .extensions import db, bcrypt, limiter
 from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage, TokenBlocklist
 
 # Cloudinary
@@ -29,8 +28,10 @@ def init_cloudinary():
     return False
 
 def upload_to_cloudinary(file_obj, folder="blogyu"):
-    """Sube un archivo a Cloudinary y devuelve la URL segura."""
-    init_cloudinary()
+    """Sube un archivo a Cloudinary y devuelve la URL segura (o None si falla)."""
+    if not init_cloudinary():
+        current_app.logger.error("CLOUDINARY_URL no configurada: no se puede subir la imagen")
+        return None
     try:
         result = cloudinary.uploader.upload(
             file_obj,
@@ -41,6 +42,36 @@ def upload_to_cloudinary(file_obj, folder="blogyu"):
     except Exception as e:
         current_app.logger.exception("Error subiendo a Cloudinary")
         return None
+
+def extract_cloudinary_public_id(url):
+    """Devuelve el public_id de una URL res.cloudinary.com/<cloud>/image/upload/... o None."""
+    if not url or "res.cloudinary.com" not in url:
+        return None
+    clean = url.split("?")[0].split("#")[0]
+    m = re.search(r"res\.cloudinary\.com/[^/]+/image/upload/(.+)$", clean)
+    if not m:
+        return None
+    parts = m.group(1).split("/")
+    # Saltar transformaciones y versión (v123) si existe
+    for i, part in enumerate(parts):
+        if re.fullmatch(r"v\d+", part):
+            parts = parts[i + 1:]
+            break
+    path = "/".join(parts)
+    return re.sub(r"\.[A-Za-z0-9]+$", "", path) or None
+
+
+def _delete_cloudinary_image(url):
+    """Borra una imagen de Cloudinary. Nunca lanza excepción."""
+    try:
+        public_id = extract_cloudinary_public_id(url)
+        if not public_id or not init_cloudinary():
+            return False
+        cloudinary.uploader.destroy(public_id, resource_type="image")
+        return True
+    except Exception:
+        current_app.logger.exception("No se pudo borrar la imagen de Cloudinary: %s", url)
+        return False
 
 # ----------------- EMAIL (SendGrid Web API por HTTPS) -----------------
 # Render bloquea los puertos SMTP salientes (25/465/587), por lo que Flask-Mail
@@ -136,7 +167,8 @@ def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
 api = bp = Blueprint('api', __name__)
 
 # Config
-ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic'}
+ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+ALLOWED_MIMETYPES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 8 * 1024 * 1024  # 8 MB default
 
@@ -149,7 +181,7 @@ def allowed_file(filename, file_obj=None):
             return True
     if file_obj is not None:
         mimetype = getattr(file_obj, 'mimetype', '') or ''
-        if mimetype.startswith('image/'):
+        if '.' not in (filename or '') and mimetype in ALLOWED_MIMETYPES:
             return True
     return False
 
@@ -398,8 +430,18 @@ def upload_step_image():
 
 @api.route('/posts', methods=['GET'])
 def get_all_posts():
-    posts = Post.query.order_by(Post.created_at.desc()).all()
-    return jsonify([p.serialize() for p in posts]), 200
+    query = Post.query.order_by(Post.created_at.desc())
+    if request.args.get('page') is None:
+        # Compatibilidad: el frontend espera un array plano
+        return jsonify([p.serialize() for p in query.all()]), 200
+    page = max(request.args.get('page', 1, type=int) or 1, 1)
+    per_page = min(max(request.args.get('per_page', 20, type=int) or 20, 1), 50)
+    pag = query.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        "posts": [p.serialize() for p in pag.items],
+        "page": pag.page, "per_page": pag.per_page, "total": pag.total,
+        "pages": pag.pages, "has_next": pag.has_next, "has_prev": pag.has_prev,
+    }), 200
 
 @api.route('/my-posts', methods=['GET'])
 @jwt_required()
@@ -437,8 +479,9 @@ def create_post():
             if not allowed_file(image_file.filename, image_file):
                 continue
             url = upload_to_cloudinary(image_file, folder="blogyu/posts")
-            if url:
-                saved_urls.append(url)
+            if not url:
+                return jsonify({"msg": "Error subiendo la imagen. Inténtalo de nuevo."}), 503
+            saved_urls.append(url)
 
     if not title or not content:
         return jsonify({"msg": "title and content required"}), 400
@@ -470,6 +513,8 @@ def update_post(post_id):
     if p.user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
 
+    removed_urls = []
+    old_main = p.image
     if request.is_json:
         data = request.get_json()
         p.title = data.get("title", p.title)
@@ -486,6 +531,7 @@ def update_post(post_id):
                             os.remove(old_path)
                     except Exception:
                         pass
+                    removed_urls.append(img.url)
                     db.session.delete(img)
 
         new_image_urls = data.get("new_images", [])
@@ -517,6 +563,7 @@ def update_post(post_id):
                             os.remove(old_path)
                     except Exception:
                         pass
+                    removed_urls.append(img.url)
                     db.session.delete(img)
 
         new_files = [f for f in request.files.getlist('images') if f and f.filename != ""]
@@ -526,14 +573,25 @@ def update_post(post_id):
                 if not allowed_file(image_file.filename, image_file):
                     continue
                 url = upload_to_cloudinary(image_file, folder="blogyu/posts")
-                if url:
-                    db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
+                if not url:
+                    db.session.rollback()
+                    return jsonify({"msg": "Error subiendo la imagen. Inténtalo de nuevo."}), 503
+                db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
 
         db.session.flush()
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
         p.image = first_img.url if first_img else p.image
 
     db.session.commit()
+
+    # Limpiar en Cloudinary las imágenes quitadas que ya no se referencian
+    candidates = set(removed_urls)
+    if old_main and old_main != p.image:
+        candidates.add(old_main)
+    for url in candidates:
+        if url == p.image or PostImage.query.filter_by(url=url).first():
+            continue
+        _delete_cloudinary_image(url)
     return jsonify(p.serialize()), 200
 
 @api.route('/posts/<int:post_id>', methods=['DELETE'])
@@ -543,6 +601,10 @@ def delete_post(post_id):
     p = Post.query.get_or_404(post_id)
     if p.user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
+
+    urls_to_delete = {img.url for img in p.images if img.url}
+    if p.image:
+        urls_to_delete.add(p.image)
 
     # 1. Borrar comentarios del post (evita ForeignKeyViolation)
     Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
@@ -569,6 +631,11 @@ def delete_post(post_id):
     # 4. Borrar el post
     db.session.delete(p)
     db.session.commit()
+
+    for url in urls_to_delete:
+        if PostImage.query.filter_by(url=url).first() or Post.query.filter_by(image=url).first():
+            continue
+        _delete_cloudinary_image(url)
     return jsonify({"msg": "Eliminado"}), 200
 
 # ----------------- CATEGORIES -----------------
@@ -1120,7 +1187,7 @@ def list_uploads():
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     try:
         files = os.listdir(uploads_dir)
-        image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.heic', '.avif'))]
+        image_files = [f for f in files if f.lower().endswith(tuple('.' + e for e in ALLOWED_EXT))]
         return jsonify({"files": image_files}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
