@@ -1,7 +1,6 @@
 # src/api/models.py
 from .extensions import db
 from datetime import datetime
-import urllib.parse
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -48,7 +47,7 @@ class User(db.Model):
             "is_active": self.is_active,
             "background": self.background,
             "is_admin": self.is_admin,
-            "profile_pic": getattr(self, "profile_pic", None),
+            "profile_pic": self.profile_pic,
             "location": self.location,
         }
 
@@ -74,33 +73,15 @@ class Post(db.Model):
         except Exception:
             created = None
 
-        image_url = None
-        raw = getattr(self, "image", None)
-        if raw:
-            try:
-                parsed = urllib.parse.urlparse(raw)
-                if parsed.scheme and parsed.netloc:
-                    if "/api/uploads/" in parsed.path:
-                        image_url = parsed.path
-                    else:
-                        image_url = parsed.path or raw
-                else:
-                    if raw.startswith("/"):
-                        image_url = raw
-                    else:
-                        image_url = f"/api/uploads/{raw}" if "/" not in raw else raw
-            except Exception:
-                image_url = raw
-
         author = None
-        if getattr(self, "author", None):
+        if self.author:
             u = self.author
             author = {
-                "id": getattr(u, "id", None),
-                "email": getattr(u, "email", None),
-                "name": getattr(u, "name", None),
-                "is_active": getattr(u, "is_active", None),
-                "profile_pic": getattr(u, "profile_pic", None),
+                "id": u.id,
+                "email": u.email,
+                "name": u.name,
+                "is_active": u.is_active,
+                "profile_pic": u.profile_pic,
             }
 
         return {
@@ -109,7 +90,7 @@ class Post(db.Model):
             "content": self.content,
             "user_id": self.user_id,
             "created_at": created,
-            "image": image_url,
+            "image": self.image,
             "category": self.category,
             "author": author,
             "images": [img.serialize() for img in self.images]
@@ -178,7 +159,7 @@ class TravelRoute(db.Model):
                 "id": self.author.id,
                 "name": self.author.name,
                 "email": self.author.email,
-                "profile_pic": getattr(self.author, "profile_pic", None),
+                "profile_pic": self.author.profile_pic,
             }
         return {
             "id": self.id,
