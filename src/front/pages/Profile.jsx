@@ -116,6 +116,8 @@ const Profile = () => {
     twitter: "", instagram: "", tiktok: "", facebook: "", website: ""
   });
   const [saving, setSaving] = useState(false);
+  const [publicPosts, setPublicPosts] = useState([]);
+  const [publicPostsPagination, setPublicPostsPagination] = useState({ page: 1, pages: 1, total: 0 });
 
   const socialConfig = [
     { key: "instagram", label: "Instagram", icon: <IconInstagram />, color: "#E1306C" },
@@ -137,10 +139,10 @@ const Profile = () => {
     } catch { return url; }
   };
 
-  const fetchUser = async (userId = id) => {
+  const fetchUser = async (userId = id, page = 1) => {
     if (!userId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/users/${userId}/public`);
+      const res = await fetch(`${API_BASE}/api/users/${userId}/public?page=${page}&per_page=6`);
       if (!res.ok) return;
       const remoteUser = await res.json();
       if (remoteUser.background) remoteUser.background = normalizeUrl(remoteUser.background);
@@ -155,6 +157,16 @@ const Profile = () => {
         facebook:  remoteUser.social?.facebook  || remoteUser.facebook  || "",
         website:   remoteUser.social?.website   || remoteUser.website   || ""
       });
+
+      const paginatedPosts = remoteUser.posts || {};
+      const items = Array.isArray(paginatedPosts.items) ? paginatedPosts.items : [];
+      setPublicPosts((prev) => (page > 1 ? [...prev, ...items] : items));
+      setPublicPostsPagination({
+        page: paginatedPosts.page || 1,
+        pages: paginatedPosts.pages || 1,
+        total: paginatedPosts.total || items.length,
+      });
+
       if (isOwnProfile) saveUserToStorage(remoteUser);
     } catch (err) { console.debug("fetchUser error", err); }
   };
@@ -575,6 +587,57 @@ const Profile = () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="container pb-5" style={{ maxWidth: "900px" }}>
+        <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "24px" }}>
+          <h5 className="fw-bold mb-3" style={{ color: "#00f2fe", letterSpacing: "2px", fontSize: "0.8rem", textTransform: "uppercase" }}>
+            📝 Publicaciones públicas ({publicPostsPagination.total})
+          </h5>
+
+          {publicPosts.length === 0 ? (
+            <p style={{ color: "rgba(255,255,255,0.45)", marginBottom: 0 }}>
+              Este usuario aún no tiene publicaciones públicas.
+            </p>
+          ) : (
+            <>
+              <div className="d-flex flex-column gap-2">
+                {publicPosts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => navigate(`/posts/${p.id}`)}
+                    className="btn text-start"
+                    style={{
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      color: "#fff",
+                      borderRadius: "12px",
+                      padding: "12px",
+                    }}
+                  >
+                    <div className="fw-bold">{p.title}</div>
+                    <div style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.8rem" }}>
+                      {p.category || "Sin categoría"} · 👁️ {p.views || 0} · 💛 {p.like_count || 0}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {publicPostsPagination.page < publicPostsPagination.pages && (
+                <div className="text-center mt-3">
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => fetchUser(id, publicPostsPagination.page + 1)}
+                    style={{ background: "linear-gradient(135deg,#00f2fe,#4facfe)", color: "#000", border: "none", borderRadius: "999px", fontWeight: 700 }}
+                  >
+                    Cargar más publicaciones
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 

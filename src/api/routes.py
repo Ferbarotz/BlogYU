@@ -3,102 +3,138 @@ import os
 import re
 import json
 import traceback
+import ssl
+import urllib.request
+import urllib.error
+from urllib.parse import urlparse, unquote
 from time import time
 from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
-from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
-from flask_mail import Message
+from flask_jwt_extended import (
+    create_access_token,
+    jwt_required,
+    get_jwt_identity,
+    decode_token,
+    get_jwt,
+    verify_jwt_in_request,
+)
+from sqlalchemy import or_, func
+from PIL import Image, UnidentifiedImageError
 
-from .extensions import db, bcrypt, mail, limiter
-from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage, TokenBlocklist
+from .extensions import db, limiter
+from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage, TokenBlocklist, Like, Notification
 
 # Cloudinary
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 
-def init_cloudinary():
-    """Inicializa Cloudinary leyendo siempre de la variable de entorno más reciente."""
-    url = os.environ.get("CLOUDINARY_URL")
-    if url:
-        cloudinary.config(cloudinary_url=url)
-        return True
-    return False
 
-def upload_to_cloudinary(file_obj, folder="blogyu"):
-    """Sube un archivo a Cloudinary y devuelve la URL segura."""
-    init_cloudinary()
-    if not os.environ.get("CLOUDINARY_URL"):
-        current_app.logger.error("CLOUDINARY_URL no configurada, no se puede subir a Cloudinary")
+def is_cloudinary_configured():
+    """Configura Cloudinary desde CLOUDINARY_URL y valida la configuración mínima."""
+    url = (os.environ.get("CLOUDINARY_URL") or "").strip()
+    if not url:
+        return False, "CLOUDINARY_URL no está configurada"
+    try:
+        cloudinary.config(cloudinary_url=url)
+        cfg = cloudinary.config()
+        if not cfg.cloud_name or not cfg.api_key or not cfg.api_secret:
+            return False, "Configuración de Cloudinary incompleta"
+    except Exception as exc:
+        current_app.logger.exception("Error configurando Cloudinary")
+        return False, f"Error configurando Cloudinary: {exc}"
+    return True, None
+
+
+def extract_cloudinary_public_id(url):
+    """Obtiene el public_id real de una URL de Cloudinary."""
+    if not url:
         return None
     try:
-        result = cloudinary.uploader.upload(
-            file_obj,
-            folder=folder,
-            resource_type="image"
-        )
-        return result.get("secure_url")
-    except Exception as e:
-        current_app.logger.exception("Error subiendo a Cloudinary")
+        parsed = urlparse(url)
+        if "res.cloudinary.com" not in (parsed.netloc or ""):
+            return None
+        path = unquote(parsed.path or "")
+        marker = "/upload/"
+        if marker not in path:
+            return None
+        remainder = path.split(marker, 1)[1]
+        segments = [s for s in remainder.split("/") if s]
+        if segments and re.fullmatch(r"v\d+", segments[0]):
+            segments = segments[1:]
+        if not segments:
+            return None
+        last = segments[-1]
+        if "." in last:
+            segments[-1] = last.rsplit(".", 1)[0]
+        public_id = "/".join(segments).strip()
+        return public_id or None
+    except Exception:
+        current_app.logger.exception("No se pudo extraer public_id de Cloudinary")
         return None
 
+
+def delete_cloudinary_asset_by_url(url):
+    """Elimina un asset de Cloudinary por URL. Los errores se registran sin romper el flujo."""
+    public_id = extract_cloudinary_public_id(url)
+    if not public_id:
+        return False
+    ok, error_msg = is_cloudinary_configured()
+    if not ok:
+        current_app.logger.warning("No se pudo eliminar en Cloudinary (%s): %s", public_id, error_msg)
+        return False
+    try:
+        cloudinary.uploader.destroy(public_id, resource_type="image", invalidate=True)
+        return True
+    except Exception:
+        current_app.logger.exception("Error eliminando asset en Cloudinary (public_id=%s)", public_id)
+        return False
+
+
+def upload_to_cloudinary(file_obj, folder="blogyu"):
+    """Sube un archivo a Cloudinary y devuelve (url, error)."""
+    ok, error_msg = is_cloudinary_configured()
+    if not ok:
+        current_app.logger.error("No se puede subir imagen: %s", error_msg)
+        return None, error_msg
+    try:
+        result = cloudinary.uploader.upload(file_obj, folder=folder, resource_type="image")
+        secure_url = result.get("secure_url")
+        if not secure_url:
+            return None, "Cloudinary no devolvió secure_url"
+        return secure_url, None
+    except Exception as exc:
+        current_app.logger.exception("Error subiendo a Cloudinary")
+        return None, f"Error subiendo imagen a Cloudinary: {exc}"
+
+
 # ----------------- EMAIL (SendGrid Web API por HTTPS) -----------------
-# Render bloquea los puertos SMTP salientes (25/465/587), por lo que Flask-Mail
-# (SMTP) nunca conecta y el worker muere por timeout (502). La Web API de
-# SendGrid usa HTTPS (443), que sí está permitido.
-import ssl
-import urllib.request
-import urllib.error
-
-
 def _get_sendgrid_api_key():
-    """La API key de SendGrid. Reutiliza MAIL_PASSWORD (donde ya está) o SENDGRID_API_KEY."""
-    key = os.environ.get("SENDGRID_API_KEY") or current_app.config.get("MAIL_PASSWORD") or os.environ.get("MAIL_PASSWORD")
-    key = (key or "").strip()
+    key = (current_app.config.get("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_KEY") or "").strip()
     return key or None
 
 
-# Identidad de remitente verificada en SendGrid. SendGrid rechaza (HTTP 403)
-# cualquier "from" que no coincida EXACTAMENTE con un Sender verificado.
-VERIFIED_SENDER_EMAIL = "ferbarotz23@gmail.com"
-
-
 def _get_sender_email():
-    """Devuelve un correo de remitente limpio y válido.
-
-    MAIL_DEFAULT_SENDER puede venir en varios formatos:
-      - "correo@dominio"
-      - "Nombre <correo@dominio>"
-      - "Nombre correo@dominio"
-    Extraemos siempre solo la dirección de correo. Si no se encuentra una
-    dirección válida, usamos la identidad verificada en SendGrid para evitar
-    el error 403 "does not match a verified Sender Identity".
-    """
-    raw = (current_app.config.get("MAIL_DEFAULT_SENDER") or os.environ.get("MAIL_DEFAULT_SENDER") or "").strip()
-    match = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", raw)
-    sender = match.group(0).strip() if match else ""
+    sender = (current_app.config.get("SENDGRID_SENDER_EMAIL") or os.environ.get("SENDGRID_SENDER_EMAIL") or "").strip()
     if not sender:
-        sender = VERIFIED_SENDER_EMAIL
+        return None
     return sender
 
 
 def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
-    """Envía un correo usando la Web API de SendGrid (HTTPS).
-
-    Devuelve (True, None) si se envió, o (False, "mensaje de error") si falló.
-    """
+    """Envía un correo usando la Web API de SendGrid (HTTPS)."""
     api_key = _get_sendgrid_api_key()
     sender = _get_sender_email()
 
     if not api_key:
-        return False, "Falta la API key de SendGrid (SENDGRID_API_KEY o MAIL_PASSWORD)."
+        return False, "Falta la API key de SendGrid (SENDGRID_API_KEY)."
     if not sender:
-        return False, "Falta el remitente (MAIL_DEFAULT_SENDER)."
+        return False, "Falta el remitente (SENDGRID_SENDER_EMAIL)."
 
-    sender_name = (os.environ.get("MAIL_SENDER_NAME") or "BlogYU").strip() or "BlogYU"
+    sender_name = (current_app.config.get("SENDGRID_SENDER_NAME") or os.environ.get("SENDGRID_SENDER_NAME") or "BlogYU").strip() or "BlogYU"
     current_app.logger.info("Enviando correo vía SendGrid API from=%s to=%s", sender, to_email)
 
     payload = {
@@ -125,7 +161,6 @@ def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
                 return True, None
             return False, f"SendGrid respondió con status {status}"
     except urllib.error.HTTPError as e:
-        # SendGrid devuelve detalles del error en el cuerpo (p.ej. remitente no verificado).
         try:
             err_body = e.read().decode("utf-8", errors="replace")
         except Exception:
@@ -139,39 +174,174 @@ def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
 api = bp = Blueprint('api', __name__)
 
 # Config
-ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+ALLOWED_MIME_TYPES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
+BLOCKED_EXTENSIONS = {'svg', 'heic', 'heif'}
+FORMAT_TO_EXTENSIONS = {
+    'PNG': {'png'},
+    'JPEG': {'jpg', 'jpeg'},
+    'GIF': {'gif'},
+    'WEBP': {'webp'},
+}
 MAX_FILE_SIZE = 8 * 1024 * 1024  # 8 MB default
+MAX_PER_PAGE = 50
+
 
 # ----------------- Helpers -----------------
+def parse_pagination_args(default_per_page=10):
+    page = request.args.get('page', 1, type=int) or 1
+    per_page = request.args.get('per_page', default_per_page, type=int) or default_per_page
+    if page < 1:
+        page = 1
+    per_page = max(1, min(per_page, MAX_PER_PAGE))
+    return page, per_page
+
+
 def allowed_file(filename, file_obj=None):
-    """Check extension or mimetype fallback."""
-    if filename and '.' in filename:
-        ext = filename.rsplit('.', 1)[1].lower().strip()
-        if ext in ALLOWED_EXT:
-            return True
-    if file_obj is not None:
-        mimetype = getattr(file_obj, 'mimetype', '') or ''
-        if mimetype.startswith('image/'):
-            return True
-    return False
+    """Valida extensión, MIME y contenido real de imagen (Pillow)."""
+    if not filename or '.' not in filename:
+        return False
+
+    ext = filename.rsplit('.', 1)[1].lower().strip()
+    if ext in BLOCKED_EXTENSIONS:
+        return False
+    if ext not in ALLOWED_EXTENSIONS:
+        return False
+    if file_obj is None:
+        return False
+
+    mimetype = (getattr(file_obj, 'mimetype', '') or '').split(';', 1)[0].strip().lower()
+    if mimetype not in ALLOWED_MIME_TYPES:
+        return False
+
+    stream = getattr(file_obj, 'stream', file_obj)
+    try:
+        pos = stream.tell()
+    except Exception:
+        pos = None
+
+    try:
+        stream.seek(0)
+        image = Image.open(stream)
+        image.verify()
+        detected_format = (image.format or '').upper()
+    except (UnidentifiedImageError, OSError, ValueError):
+        return False
+    finally:
+        try:
+            if pos is None:
+                stream.seek(0)
+            else:
+                stream.seek(pos)
+        except Exception:
+            pass
+
+    allowed_ext_for_format = FORMAT_TO_EXTENSIONS.get(detected_format)
+    if not allowed_ext_for_format:
+        return False
+    return ext in allowed_ext_for_format
+
+def cleanup_post_cloudinary_assets(post):
+    """Elimina imágenes asociadas al post en Cloudinary sin romper el flujo."""
+    urls = set()
+    if getattr(post, "image", None):
+        urls.add(post.image)
+    for img in getattr(post, "images", []) or []:
+        if getattr(img, "url", None):
+            urls.add(img.url)
+
+    for url in urls:
+        delete_cloudinary_asset_by_url(url)
+
+
+ROLE_PRIORITY = {
+    "user": 0,
+    "editor": 1,
+    "moderator": 2,
+    "admin": 3,
+}
+
+
+def normalize_role(user):
+    if not user:
+        return "user"
+    if getattr(user, "is_admin", False):
+        return "admin"
+    role = (getattr(user, "role", None) or "user").strip().lower()
+    return role if role in ROLE_PRIORITY else "user"
+
+
+def has_any_role(user, *roles):
+    if not user:
+        return False
+    user_level = ROLE_PRIORITY.get(normalize_role(user), 0)
+    required = [ROLE_PRIORITY.get(r, -1) for r in roles]
+    return any(user_level >= level for level in required)
+
+
+def roles_required(*roles):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                user_id = get_jwt_identity()
+                if user_id is None:
+                    return jsonify({"msg": "No autorizado (sin token)"}), 401
+                user = User.query.get(int(user_id))
+            except Exception:
+                return jsonify({"msg": "No autorizado"}), 401
+
+            if not user or not has_any_role(user, *roles):
+                return jsonify({"msg": "Acceso restringido"}), 403
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
 
 def admin_required(fn):
-    """Decorator to require is_admin on current JWT user."""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        try:
-            user_id = get_jwt_identity()
-            if user_id is None:
-                return jsonify({"msg": "No autorizado (sin token)"}), 401
-            u = User.query.get(int(user_id))
-        except Exception:
-            return jsonify({"msg": "No autorizado"}), 401
+    """Compatibilidad hacia atrás: exige rol admin o is_admin=true."""
+    return roles_required("admin")(fn)
 
-        if not getattr(u, "is_admin", False):
-            return jsonify({"msg": "Acceso restringido: admin requerido"}), 403
-        return fn(*args, **kwargs)
-    return wrapper
+
+def get_optional_user_id():
+    """Obtiene user_id opcional desde JWT si existe y es válido."""
+    try:
+        verify_jwt_in_request(optional=True)
+        identity = get_jwt_identity()
+        return int(identity) if identity is not None else None
+    except Exception:
+        return None
+
+
+def can_view_post(post, viewer_user):
+    if not post:
+        return False
+    if post.is_hidden:
+        if not viewer_user:
+            return False
+        if viewer_user.id == post.user_id:
+            return True
+        return has_any_role(viewer_user, "admin", "moderator")
+
+    if post.status == "published":
+        return True
+
+    if not viewer_user:
+        return False
+    if viewer_user.id == post.user_id:
+        return True
+    return has_any_role(viewer_user, "admin")
+
+
+def serialize_post_for_viewer(post, viewer_user_id=None):
+    data = post.serialize()
+    if viewer_user_id:
+        data["liked_by_me"] = Like.query.filter_by(user_id=viewer_user_id, post_id=post.id).first() is not None
+    else:
+        data["liked_by_me"] = False
+    return data
 
 # ----------------- Root / Health -----------------
 @api.route("/", methods=["GET"])
@@ -184,8 +354,15 @@ def api_root():
 @admin_required
 def test_cloudinary():
     url = os.environ.get("CLOUDINARY_URL", "")
+    ok, error_msg = is_cloudinary_configured()
+    if not ok:
+        return jsonify({
+            "ok": False,
+            "error": error_msg,
+            "url_detectada_len": len(url),
+        }), 503
+
     try:
-        init_cloudinary()
         cfg = cloudinary.config()
         ping = cloudinary.api.ping()
         return jsonify({
@@ -306,11 +483,11 @@ def forgot_password():
     FRONTEND_URL = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
     reset_url = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
 
-    mail_suppressed = bool(current_app.config.get('MAIL_SUPPRESS_SEND'))
+    mail_suppressed = bool(current_app.config.get('EMAIL_SUPPRESS_SEND'))
     generic_ok = {"msg": "Si el email existe, se ha enviado un link de recuperación"}
 
     if mail_suppressed:
-        current_app.logger.warning("Envío de correo suprimido (MAIL_SUPPRESS_SEND activo) para %s", email)
+        current_app.logger.warning("Envío de correo suprimido (EMAIL_SUPPRESS_SEND activo) para %s", email)
         if current_app.debug:
             return jsonify({**generic_ok, "reset_url": reset_url}), 200
         return jsonify(generic_ok), 200
@@ -393,49 +570,101 @@ def upload_step_image():
     if not allowed_file(file.filename, file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
-    file_url = upload_to_cloudinary(file, folder="blogyu/steps")
+    file_url, upload_error = upload_to_cloudinary(file, folder="blogyu/steps")
     if not file_url:
-        return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
+        status = 503 if upload_error and "CLOUDINARY_URL" in upload_error else 500
+        return jsonify({"msg": "Error subiendo imagen a Cloudinary", "error": upload_error}), status
     current_app.logger.info(f"URL devuelta para imagen: {file_url}")
     return jsonify({"url": file_url}), 200
 
+def _apply_post_filters(query, viewer_user, include_mine=False):
+    q = (request.args.get('q') or request.args.get('search') or '').strip()
+    category = (request.args.get('category') or '').strip()
+    status = (request.args.get('status') or '').strip().lower()
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Post.title.ilike(like), Post.content.ilike(like), Post.category.ilike(like)))
+
+    if category:
+        query = query.filter(func.lower(Post.category) == category.lower())
+
+    if include_mine and viewer_user:
+        if status in ('draft', 'published'):
+            query = query.filter(Post.status == status)
+        query = query.filter(or_(Post.user_id == viewer_user.id, Post.status == 'published'))
+    else:
+        query = query.filter(Post.status == 'published')
+
+    query = query.filter(Post.is_hidden.is_(False))
+    return query
+
+
 @api.route('/posts', methods=['GET'])
 def get_posts():
-    page = request.args.get('page', 1, type=int)
-    per_page = current_app.config.get('POSTS_PER_PAGE', 10)
-    search = request.args.get('search')
-    category = request.args.get('category')
+    viewer_user_id = get_optional_user_id()
+    viewer_user = User.query.get(viewer_user_id) if viewer_user_id else None
+
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
 
     query = Post.query
-    if search:
-        query = query.filter(
-            Post.title.contains(search) | Post.content.contains(search)
-        )
-    if category:
-        query = query.filter(Post.category == category)
+    include_mine = request.args.get('mine') in ('1', 'true', 'yes')
+    query = _apply_post_filters(query, viewer_user, include_mine=include_mine)
 
-    posts = query.order_by(Post.created_at.desc()).paginate(
-        page=page, per_page=per_page, error_out=False
-    )
+    posts = query.order_by(Post.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     return jsonify({
-        "items": [p.serialize() for p in posts.items],
+        "items": [serialize_post_for_viewer(p, viewer_user_id) for p in posts.items],
         "total": posts.total,
         "page": posts.page,
         "pages": posts.pages,
         "per_page": posts.per_page
     }), 200
 
+
+@api.route('/posts/search', methods=['GET'])
+def search_posts():
+    return get_posts()
+
+
 @api.route('/my-posts', methods=['GET'])
 @jwt_required()
 def get_user_posts():
-    user_id = get_jwt_identity()
-    posts = Post.query.filter_by(user_id=int(user_id)).order_by(Post.created_at.desc()).all()
-    return jsonify([p.serialize() for p in posts]), 200
+    user_id = int(get_jwt_identity())
+    user = User.query.get_or_404(user_id)
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
+
+    status = (request.args.get('status') or '').strip().lower()
+    query = Post.query.filter_by(user_id=user_id)
+    if status in ('draft', 'published'):
+        query = query.filter(Post.status == status)
+
+    posts = query.order_by(Post.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        "items": [serialize_post_for_viewer(p, user.id) for p in posts.items],
+        "total": posts.total,
+        "page": posts.page,
+        "pages": posts.pages,
+        "per_page": posts.per_page,
+    }), 200
+
 
 @api.route('/posts/<int:post_id>', methods=['GET'])
 def get_post(post_id):
+    viewer_user_id = get_optional_user_id()
+    viewer_user = User.query.get(viewer_user_id) if viewer_user_id else None
+
     post = Post.query.get_or_404(post_id)
-    return jsonify(post.serialize()), 200
+    if not can_view_post(post, viewer_user):
+        return jsonify({"msg": "Post no disponible"}), 404
+
+    if not (viewer_user and viewer_user.id == post.user_id):
+        post.views = int(post.views or 0) + 1
+        db.session.commit()
+
+    return jsonify(serialize_post_for_viewer(post, viewer_user_id)), 200
+
 
 @api.route('/posts', methods=['POST'])
 @jwt_required()
@@ -444,25 +673,31 @@ def create_post():
     saved_urls = []
 
     if request.is_json:
-        data = request.get_json()
+        data = request.get_json() or {}
         title = data.get('title')
         content = data.get('content')
         category = data.get('category')
         saved_urls = data.get('images', [])
+        status = (data.get('status') or 'published').strip().lower()
     else:
         title = request.form.get('title')
         content = request.form.get('content')
         category = request.form.get('category')
-        uploads_dir = os.path.join(current_app.instance_path, 'uploads')
-        os.makedirs(uploads_dir, exist_ok=True)
-        for i, image_file in enumerate(request.files.getlist('images')):
-            if not image_file or image_file.filename == "":
-                continue
+        status = (request.form.get('status') or 'published').strip().lower()
+
+        image_files = [f for f in request.files.getlist('images') if f and f.filename]
+        for image_file in image_files:
             if not allowed_file(image_file.filename, image_file):
-                continue
-            url = upload_to_cloudinary(image_file, folder="blogyu/posts")
-            if url:
-                saved_urls.append(url)
+                return jsonify({"msg": "Tipo de archivo no permitido", "file": image_file.filename}), 400
+
+            url, upload_error = upload_to_cloudinary(image_file, folder="blogyu/posts")
+            if not url:
+                status_code = 503 if upload_error and "CLOUDINARY_URL" in upload_error else 500
+                return jsonify({"msg": "No se pudo subir una imagen del post", "error": upload_error}), status_code
+            saved_urls.append(url)
+
+    if status not in ('draft', 'published'):
+        status = 'published'
 
     if not title or not content:
         return jsonify({"msg": "title and content required"}), 400
@@ -474,8 +709,14 @@ def create_post():
     main_image = saved_urls[0] if saved_urls else None
 
     p = Post(
-        title=title, content=content, image=main_image,
-        user_id=user_id, created_at=datetime.utcnow(), category=category
+        title=title,
+        content=content,
+        image=main_image,
+        user_id=user_id,
+        created_at=datetime.utcnow(),
+        category=category,
+        status=status,
+        is_hidden=False,
     )
     db.session.add(p)
     db.session.flush()
@@ -484,172 +725,163 @@ def create_post():
         db.session.add(PostImage(url=url, order=order, post_id=p.id))
 
     db.session.commit()
-    return jsonify({"msg": "Post creado", "post": p.serialize(), "id": p.id}), 201
+    return jsonify({"msg": "Post creado", "post": serialize_post_for_viewer(p, user_id), "id": p.id}), 201
+
 
 @api.route('/posts/<int:post_id>/stats', methods=['GET'])
 def post_stats(post_id):
     post = Post.query.get_or_404(post_id)
-    # Si el post no tiene contador de vistas, inicializamos en 0
-    views = post.views if hasattr(post, 'views') else 0
-    content = post.content or ""
-    # Tiempo de lectura estimado: ~200 palabras por minuto
-    reading_time = max(1, round(len(content.split()) / 200))
+    data = post.serialize()
     return jsonify({
-        "views": views,
-        "reading_time_minutes": reading_time,
-        "word_count": len(content.split())
+        "views": data.get("views", 0),
+        "reading_time_minutes": data.get("reading_time_minutes", 1),
+        "word_count": data.get("word_count", 0),
+        "like_count": data.get("like_count", 0),
     }), 200
+
 
 @api.route('/posts/<int:post_id>/like', methods=['POST'])
 @jwt_required()
 def like_post(post_id):
     user_id = int(get_jwt_identity())
-    # Si ya dio like, lo quita (unlike); si no, lo agrega
+    post = Post.query.get_or_404(post_id)
+
+    if post.status != 'published' or post.is_hidden:
+        return jsonify({"msg": "No se puede reaccionar a este post"}), 400
+
     existing = Like.query.filter_by(user_id=user_id, post_id=post_id).first()
     if existing:
         db.session.delete(existing)
-        db.session.commit()
-        return jsonify({"msg": "Like removido", "likes_count": Post.query.get(post_id).likes.count()})
+        action = "removed"
     else:
         like = Like(user_id=user_id, post_id=post_id)
         db.session.add(like)
-        db.session.commit()
-        return jsonify({"msg": "Like dado", "likes_count": Post.query.get(post_id).likes.count()})
+        action = "added"
+
+        if post.user_id != user_id:
+            notification = Notification(
+                user_id=post.user_id,
+                type="like",
+                related_id=post_id,
+                post_id=post_id,
+                actor_id=user_id,
+                is_read=False,
+            )
+            db.session.add(notification)
+
+    db.session.commit()
+    likes_count = Like.query.filter_by(post_id=post_id).count()
+    return jsonify({"action": action, "likes_count": likes_count, "liked_by_me": action == "added"}), 200
+
 
 @api.route('/posts/<int:post_id>/likes', methods=['GET'])
-def get_post_likes():
+def get_post_likes(post_id):
     count = Like.query.filter_by(post_id=post_id).count()
-    return jsonify({"likes_count": count}), 200
+    viewer_user_id = get_optional_user_id()
+    liked_by_me = False
+    if viewer_user_id:
+        liked_by_me = Like.query.filter_by(post_id=post_id, user_id=viewer_user_id).first() is not None
+    return jsonify({"likes_count": count, "liked_by_me": liked_by_me}), 200
 
 @api.route('/posts/<int:post_id>', methods=['PUT'])
 @jwt_required()
 def update_post(post_id):
     user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(user_id)
     p = Post.query.get_or_404(post_id)
-    if p.user_id != user_id:
+
+    can_edit = (p.user_id == user_id) or has_any_role(current_user, "editor", "admin")
+    if not can_edit:
         return jsonify({"msg": "No tienes permisos"}), 403
 
+    removed_urls = []
+
     if request.is_json:
-        data = request.get_json()
+        data = request.get_json() or {}
         p.title = data.get("title", p.title)
         p.content = data.get("content", p.content)
         p.category = data.get("category", p.category)
+        status = (data.get("status") or p.status or "published").strip().lower()
+        if status in ("draft", "published"):
+            p.status = status
+        if has_any_role(current_user, "moderator", "admin") and "is_hidden" in data:
+            p.is_hidden = bool(data.get("is_hidden"))
 
-        keep_ids = data.get("keep_image_ids", [])
+        keep_ids_raw = data.get("keep_image_ids")
+        keep_ids = set(int(x) for x in (keep_ids_raw or []) if str(x).isdigit()) if keep_ids_raw is not None else None
+
         if keep_ids is not None:
             for img in list(p.images):
                 if img.id not in keep_ids:
-                    try:
-                        old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
-                        if os.path.exists(old_path):
-                            os.remove(old_path)
-                    except Exception:
-                        pass
+                    removed_urls.append(img.url)
                     db.session.delete(img)
 
-        new_image_urls = data.get("new_images", [])
+        new_image_urls = [u for u in (data.get("new_images") or []) if u]
         current_count = PostImage.query.filter_by(post_id=p.id).count()
         for i, url in enumerate(new_image_urls):
             db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
-
-        # Cleanup: eliminar imágenes de PostImage que ya no se mantienen
-        keep_ids = set(data.get("keep_image_ids", []))
-        for img in list(p.images):
-            if img.id not in keep_ids:
-                # Eliminar de Cloudinary si es URL de Cloudinary
-                if img.url and "/res.cloudinary.com" in img.url:
-                    try:
-                        cloudinary.uploader.destroy(img.url.split("/upload/")[0].split("//")[1])
-                    except Exception:
-                        current_app.logger.exception("Error eliminando imagen antigua de Cloudinary")
-                try:
-                    old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
-                    if os.path.exists(old_path):
-                        os.remove(old_path)
-                except Exception:
-                    pass
-                db.session.delete(img)
-
-        db.session.flush()
-        first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
-        p.image = first_img.url if first_img else None
-
     else:
         p.title = request.form.get("title") or p.title
         p.content = request.form.get("content") or p.content
         p.category = request.form.get("category") or p.category
+        form_status = (request.form.get("status") or p.status or "published").strip().lower()
+        if form_status in ("draft", "published"):
+            p.status = form_status
+        if has_any_role(current_user, "moderator", "admin") and request.form.get("is_hidden") is not None:
+            p.is_hidden = str(request.form.get("is_hidden")).lower() in ("1", "true", "yes", "on")
 
         keep_ids_raw = request.form.get("keep_image_ids")
-        if keep_ids_raw:
+        keep_ids = None
+        if keep_ids_raw is not None:
             try:
-                keep_ids = json.loads(keep_ids_raw)
+                parsed = json.loads(keep_ids_raw)
+                keep_ids = set(int(x) for x in (parsed or []) if str(x).isdigit())
             except Exception:
-                keep_ids = []
+                keep_ids = set()
 
+        if keep_ids is not None:
             for img in list(p.images):
                 if img.id not in keep_ids:
-                    try:
-                        old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
-                        if os.path.exists(old_path):
-                            os.remove(old_path)
-                    except Exception:
-                        pass
+                    removed_urls.append(img.url)
                     db.session.delete(img)
 
-        new_files = [f for f in request.files.getlist('images') if f and f.filename != ""]
+        new_files = [f for f in request.files.getlist('images') if f and f.filename]
         if new_files:
             current_count = PostImage.query.filter_by(post_id=p.id).count()
             for i, image_file in enumerate(new_files):
                 if not allowed_file(image_file.filename, image_file):
-                    continue
-                url = upload_to_cloudinary(image_file, folder="blogyu/posts")
-                if url:
-                    db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
+                    return jsonify({"msg": "Tipo de archivo no permitido", "file": image_file.filename}), 400
+                url, upload_error = upload_to_cloudinary(image_file, folder="blogyu/posts")
+                if not url:
+                    status = 503 if upload_error and "CLOUDINARY_URL" in upload_error else 500
+                    return jsonify({"msg": "No se pudo subir una imagen del post", "error": upload_error}), status
+                db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
 
-        db.session.flush()
-        first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
-        p.image = first_img.url if first_img else p.image
+    db.session.flush()
+    first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
+    p.image = first_img.url if first_img else None
 
     db.session.commit()
-    return jsonify(p.serialize()), 200
+
+    for url in set(filter(None, removed_urls)):
+        delete_cloudinary_asset_by_url(url)
+
+    return jsonify(serialize_post_for_viewer(p, user_id)), 200
 
 @api.route('/posts/<int:post_id>', methods=['DELETE'])
 @jwt_required()
 def delete_post(post_id):
     user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(user_id)
     p = Post.query.get_or_404(post_id)
-    if p.user_id != user_id:
+    if p.user_id != user_id and not has_any_role(current_user, "moderator", "admin"):
         return jsonify({"msg": "No tienes permisos"}), 403
 
-    # 1. Borrar comentarios del post (evita ForeignKeyViolation)
-    Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
+    cleanup_post_cloudinary_assets(p)
 
-    # 2. Borrar imágenes del post
-    for img in p.images:
-        try:
-            old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
-            if os.path.exists(old_path):
-                os.remove(old_path)
-        except Exception:
-            current_app.logger.exception("Error eliminando archivo imagen")
+    Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
     PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
 
-    # 3. Borrar imagen principal si es local
-    if p.image:
-        try:
-            old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(p.image))
-            if os.path.exists(old_path):
-                os.remove(old_path)
-        except Exception:
-            current_app.logger.exception("Error eliminando imagen principal")
-    # También eliminar de Cloudinary si es una URL de Cloudinary
-    if p.image and "/res.cloudinary.com" in p.image:
-        try:
-            cloudinary.uploader.destroy(p.image.split("/upload/")[0].split("//")[1])
-        except Exception:
-            current_app.logger.exception("Error eliminando imagen de Cloudinary")
-
-    # 4. Borrar el post
     db.session.delete(p)
     db.session.commit()
     return jsonify({"msg": "Eliminado"}), 200
@@ -685,6 +917,12 @@ def get_categories():
 # ----------------- COMMENTS -----------------
 @api.route('/posts/<int:post_id>/comments', methods=['GET'])
 def get_comments(post_id):
+    viewer_user_id = get_optional_user_id()
+    viewer_user = User.query.get(viewer_user_id) if viewer_user_id else None
+    post = Post.query.get_or_404(post_id)
+    if not can_view_post(post, viewer_user):
+        return jsonify({"msg": "Post no disponible"}), 404
+
     comments = Comment.query.filter_by(post_id=post_id).order_by(Comment.created_at.asc()).all()
     return jsonify([c.serialize() for c in comments]), 200
 
@@ -694,65 +932,72 @@ def add_comment(post_id):
     body = request.get_json(silent=True) or {}
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
+    post = Post.query.get_or_404(post_id)
+
+    if post.status != 'published' or post.is_hidden:
+        return jsonify({"msg": "No se puede comentar este post"}), 400
+
     author_name = user.name if user else "Usuario"
     content = (body.get("content") or "").strip()
     if not content:
         return jsonify({"msg": "El comentario no puede estar vacio"}), 400
     if len(content) > 2000:
         return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
-    new_comment = Comment(
-        content=content,
-        author_name=author_name,
-        post_id=post_id,
-        user_id=user_id
-    )
-    db.session.add(new_comment)
-    db.session.commit()
 
-    # Crear notificación al autor del post si es diferente al comentador
-    post = Post.query.get(post_id)
-    if post and post.user_id and post.user_id != user_id:
-        # Evitar notificación duplicada muy rápida
-        recent = Notification.query.filter_by(
+    new_comment = Comment(content=content, author_name=author_name, post_id=post_id, user_id=user_id)
+    db.session.add(new_comment)
+    db.session.flush()
+
+    if post.user_id and post.user_id != user_id:
+        notif = Notification(
             user_id=post.user_id,
             type="comment",
-            related_id=comment.id
-        ).first()
-        if not recent:
-            notif = Notification(
-                user_id=post.user_id,
-                type="comment",
-                related_id=comment.id
-            )
-            db.session.add(notif)
-            db.session.commit()
+            related_id=new_comment.id,
+            post_id=post_id,
+            actor_id=user_id,
+            is_read=False,
+        )
+        db.session.add(notif)
 
+    db.session.commit()
     return jsonify(new_comment.serialize()), 201
+
 
 @api.route('/posts/<int:post_id>/comments/<int:comment_id>', methods=['PUT'])
 @jwt_required()
 def edit_comment(post_id, comment_id):
     user_id = int(get_jwt_identity())
     comment = Comment.query.get_or_404(comment_id)
+    if comment.post_id != post_id:
+        return jsonify({"msg": "Comentario no pertenece al post"}), 400
+
     if comment.user_id != user_id:
         return jsonify({"msg": "No tienes permisos para editar este comentario"}), 403
+
     body = request.get_json(silent=True) or {}
     new_content = (body.get("content") or "").strip()
     if not new_content:
         return jsonify({"msg": "El comentario no puede estar vacío"}), 400
     if len(new_content) > 2000:
         return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
+
     comment.content = new_content
     db.session.commit()
     return jsonify(comment.serialize()), 200
+
 
 @api.route('/posts/<int:post_id>/comments/<int:comment_id>', methods=['DELETE'])
 @jwt_required()
 def delete_comment(post_id, comment_id):
     user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(user_id)
     comment = Comment.query.get_or_404(comment_id)
-    if comment.user_id != user_id:
+    if comment.post_id != post_id:
+        return jsonify({"msg": "Comentario no pertenece al post"}), 400
+
+    if comment.user_id != user_id and not has_any_role(current_user, "moderator", "admin"):
         return jsonify({"msg": "No tienes permisos para borrar este comentario"}), 403
+
     db.session.delete(comment)
     db.session.commit()
     return jsonify({"msg": "Comentario borrado"}), 200
@@ -762,7 +1007,8 @@ def delete_comment(post_id, comment_id):
 @jwt_required()
 def get_user(user_id):
     current_user_id = int(get_jwt_identity())
-    if current_user_id != user_id:
+    requester = User.query.get_or_404(current_user_id)
+    if current_user_id != user_id and not has_any_role(requester, "admin"):
         return jsonify({"msg": "No tienes permisos para ver este usuario"}), 403
     user = User.query.get_or_404(user_id)
     try:
@@ -797,9 +1043,10 @@ def upload_user_background(user_id):
     if not allowed_file(image_file.filename, image_file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
-    file_url = upload_to_cloudinary(image_file, folder="blogyu/backgrounds")
+    file_url, upload_error = upload_to_cloudinary(image_file, folder="blogyu/backgrounds")
     if not file_url:
-        return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
+        status = 503 if upload_error and "CLOUDINARY_URL" in upload_error else 500
+        return jsonify({"msg": "Error subiendo imagen a Cloudinary", "error": upload_error}), status
 
     try:
         user = User.query.get_or_404(user_id)
@@ -844,9 +1091,10 @@ def upload_user_profile_pic(user_id):
     if not allowed_file(image_file.filename, image_file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
-    file_url = upload_to_cloudinary(image_file, folder="blogyu/avatars")
+    file_url, upload_error = upload_to_cloudinary(image_file, folder="blogyu/avatars")
     if not file_url:
-        return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
+        status = 503 if upload_error and "CLOUDINARY_URL" in upload_error else 500
+        return jsonify({"msg": "Error subiendo imagen a Cloudinary", "error": upload_error}), status
 
     try:
         user = User.query.get_or_404(user_id)
@@ -1013,8 +1261,18 @@ def create_route():
 
 @api.route('/routes', methods=['GET'])
 def get_routes():
-    routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).all()
-    return jsonify([r.serialize() for r in routes]), 200
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
+    routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    return jsonify({
+        "items": [r.serialize() for r in routes.items],
+        "total": routes.total,
+        "page": routes.page,
+        "pages": routes.pages,
+        "per_page": routes.per_page,
+    }), 200
 
 @api.route('/routes/<int:route_id>', methods=['GET'])
 def get_route(route_id):
@@ -1036,8 +1294,18 @@ def delete_route(route_id):
 @jwt_required()
 def get_my_routes():
     user_id = int(get_jwt_identity())
-    routes = TravelRoute.query.filter_by(user_id=user_id).order_by(TravelRoute.created_at.desc()).all()
-    return jsonify([r.serialize() for r in routes]), 200
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
+    routes = TravelRoute.query.filter_by(user_id=user_id).order_by(TravelRoute.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    return jsonify({
+        "items": [r.serialize() for r in routes.items],
+        "total": routes.total,
+        "page": routes.page,
+        "pages": routes.pages,
+        "per_page": routes.per_page,
+    }), 200
 
 @api.route('/routes/<int:route_id>', methods=['PUT'])
 @jwt_required()
@@ -1104,7 +1372,7 @@ def test_mail():
     # Destinatario: ?to=correo o, por defecto, el remitente verificado.
     to = (request.args.get('to') or _get_sender_email() or '').strip()
     if not to:
-        return jsonify({"error": "No hay destinatario. Usa ?to=correo o configura MAIL_DEFAULT_SENDER."}), 400
+        return jsonify({"error": "No hay destinatario. Usa ?to=correo o configura SENDGRID_SENDER_EMAIL."}), 400
 
     ok, err = send_email_via_sendgrid_api(
         to,
@@ -1198,133 +1466,257 @@ def set_home_background():
 # ----------------- ADMIN POSTS -----------------
 @api.route('/admin/posts', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_get_all_posts():
-    page = request.args.get('page', 1, type=int)
-    per_page = current_app.config.get('POSTS_PER_PAGE', 10)
-    status = request.args.get('status')
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
+    status = (request.args.get('status') or '').strip().lower()
+    q = (request.args.get('q') or '').strip()
+
     query = Post.query
     if status in ('published', 'draft'):
         query = query.filter(Post.status == status)
-    posts = query.order_by(Post.created_at.desc()).paginate(
-        page=page, per_page=per_page, error_out=False
-    )
+
+    if q:
+        like = f"%{q}%"
+        query = query.join(User, User.id == Post.user_id).filter(
+            or_(
+                Post.title.ilike(like),
+                Post.content.ilike(like),
+                Post.category.ilike(like),
+                User.name.ilike(like),
+                User.email.ilike(like),
+            )
+        )
+
+    posts = query.order_by(Post.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     return jsonify({
-        "items": [p.serialize() for p in posts.items],
+        "items": [serialize_post_for_viewer(p) for p in posts.items],
         "total": posts.total,
         "page": posts.page,
         "pages": posts.pages,
-        "per_page": posts.per_page
+        "per_page": posts.per_page,
     }), 200
+
 
 @api.route('/admin/posts/<int:post_id>', methods=['DELETE'])
 @jwt_required()
-@admin_required
+@roles_required('admin', 'moderator')
 def admin_delete_post(post_id):
     p = Post.query.get_or_404(post_id)
+    cleanup_post_cloudinary_assets(p)
+    Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
+    PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
     db.session.delete(p)
     db.session.commit()
-    return jsonify({"msg": "Post eliminado por admin"}), 200
+    return jsonify({"msg": "Post eliminado"}), 200
+
+
+@api.route('/admin/posts/<int:post_id>/visibility', methods=['PATCH'])
+@jwt_required()
+@roles_required('admin', 'moderator')
+def admin_toggle_post_visibility(post_id):
+    post = Post.query.get_or_404(post_id)
+    data = request.get_json(silent=True) or {}
+    if 'is_hidden' not in data:
+        return jsonify({"msg": "Campo is_hidden requerido"}), 400
+    post.is_hidden = bool(data.get('is_hidden'))
+    db.session.commit()
+    return jsonify({"msg": "Visibilidad actualizada", "post": serialize_post_for_viewer(post)}), 200
+
 
 # ----------------- ADMIN ROUTES -----------------
 @api.route('/admin/routes', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_get_all_routes():
-    routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).all()
-    return jsonify([r.serialize() for r in routes]), 200
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
+    routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    return jsonify({
+        "items": [r.serialize() for r in routes.items],
+        "total": routes.total,
+        "page": routes.page,
+        "pages": routes.pages,
+        "per_page": routes.per_page,
+    }), 200
+
 
 @api.route('/admin/routes/<int:route_id>', methods=['DELETE'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_delete_route(route_id):
     route = TravelRoute.query.get_or_404(route_id)
     db.session.delete(route)
     db.session.commit()
     return jsonify({"msg": "Ruta eliminada por admin"}), 200
 
+
 # ----------------- ADMIN STATS -----------------
 @api.route('/admin/stats', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_stats():
     users_count = User.query.count()
     posts_count = Post.query.count()
     published_count = Post.query.filter_by(status='published').count()
     draft_count = Post.query.filter_by(status='draft').count()
+    hidden_count = Post.query.filter_by(is_hidden=True).count()
     routes_count = TravelRoute.query.count()
     comments_count = Comment.query.count()
     likes_count = Like.query.count()
+    views_count = db.session.query(func.coalesce(func.sum(Post.views), 0)).scalar() or 0
+
+    by_category_rows = (
+        db.session.query(Post.category, func.count(Post.id))
+        .filter(Post.status == 'published', Post.is_hidden.is_(False))
+        .group_by(Post.category)
+        .all()
+    )
+    posts_by_category = [
+        {"category": (cat or "sin_categoria"), "count": int(total)}
+        for cat, total in by_category_rows
+    ]
+
+    latest_users = User.query.order_by(User.created_at.desc(), User.id.desc()).limit(5).all()
+    latest_posts = Post.query.order_by(Post.created_at.desc(), Post.id.desc()).limit(5).all()
+
     return jsonify({
         "users": users_count,
         "posts": posts_count,
         "published": published_count,
         "drafts": draft_count,
+        "hidden": hidden_count,
         "routes": routes_count,
         "comments": comments_count,
         "likes": likes_count,
+        "views": int(views_count),
+        "posts_by_category": posts_by_category,
+        "latest_users": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "role": normalize_role(u),
+                "is_active": bool(u.is_active),
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
+            for u in latest_users
+        ],
+        "latest_posts": [
+            {
+                "id": p.id,
+                "title": p.title,
+                "status": p.status,
+                "is_hidden": bool(p.is_hidden),
+                "author_name": p.author.name if p.author else None,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in latest_posts
+        ],
     }), 200
+
 
 # ----------------- ADMIN USERS -----------------
 @api.route('/admin/users', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def get_all_users():
-    users = User.query.order_by(User.id.asc()).all()
-    return jsonify([u.serialize() for u in users]), 200
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
+    q = (request.args.get('q') or '').strip()
+
+    query = User.query
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                User.name.ilike(like),
+                User.email.ilike(like),
+                User.role.ilike(like),
+            )
+        )
+
+    users = query.order_by(User.id.asc()).paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        "items": [u.serialize() for u in users.items],
+        "total": users.total,
+        "page": users.page,
+        "pages": users.pages,
+        "per_page": users.per_page,
+    }), 200
+
 
 @api.route('/admin/users/<int:user_id>', methods=['DELETE'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_delete_user(user_id):
     user = User.query.get_or_404(user_id)
     db.session.delete(user)
     db.session.commit()
     return jsonify({"msg": "Usuario eliminado"}), 200
 
-@api.route('/admin/users/<int:user_id>', methods=['PUT'])
+
+@api.route('/admin/users/<int:user_id>', methods=['PUT', 'PATCH'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_update_user(user_id):
     user = User.query.get_or_404(user_id)
     data = request.get_json(silent=True) or {}
+
+    if 'is_active' in data:
+        user.is_active = bool(data['is_active'])
+
+    if 'role' in data:
+        requested_role = str(data['role']).strip().lower()
+        if requested_role not in ROLE_PRIORITY:
+            return jsonify({"msg": "Rol inválido"}), 400
+        user.role = requested_role
+        user.is_admin = requested_role == 'admin'
+
     if 'is_admin' in data:
         user.is_admin = bool(data['is_admin'])
-    if 'role' in data:
-        user.role = str(data['role'])
+        if user.is_admin:
+            user.role = 'admin'
+        elif normalize_role(user) == 'admin':
+            user.role = 'user'
+
     db.session.commit()
     return jsonify(user.serialize()), 200
+
 
 @api.route('/users/<int:user_id>/public', methods=['GET'])
 def get_user_public(user_id):
     user = User.query.get_or_404(user_id)
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
 
-    # Cuentas
-    posts_count = Post.query.filter_by(user_id=user_id).count()
-    routes_count = TravelRoute.query.filter_by(user_id=user_id).count()
-    likes_given = Like.query.filter_by(user_id=user_id).count()
-
-    social = {}
-    if hasattr(user, 'social') and isinstance(getattr(user, 'social'), dict):
-        social = user.social or {}
-    else:
-        for key in ['twitter', 'instagram', 'tiktok', 'facebook', 'website']:
-            val = getattr(user, f'social_{key}', None) or getattr(user, key, None)
-            if val:
-                social[key] = val
+    public_posts = (
+        Post.query
+        .filter_by(user_id=user_id, status='published', is_hidden=False)
+        .order_by(Post.created_at.desc())
+        .paginate(page=page, per_page=per_page, error_out=False)
+    )
 
     return jsonify({
         "id": user.id,
-        "name": getattr(user, "name", None),
-        "email": getattr(user, "email", None),
-        "profile_pic": getattr(user, "profile_pic", None),
-        "background": getattr(user, "background", None),
-        "role": getattr(user, "role", "user"),
-        "posts_count": posts_count,
-        "routes_count": routes_count,
-        "likes_given": likes_given,
-        "joined_at": user.created_at.isoformat() if hasattr(user, 'created_at') else None,
-        "social": social,
+        "name": user.name,
+        "profile_pic": user.profile_pic,
+        "background": user.background,
+        "role": normalize_role(user),
+        "posts_count": Post.query.filter_by(user_id=user_id, status='published', is_hidden=False).count(),
+        "routes_count": TravelRoute.query.filter_by(user_id=user_id).count(),
+        "likes_given": Like.query.filter_by(user_id=user_id).count(),
+        "joined_at": user.created_at.isoformat() if user.created_at else None,
+        "posts": {
+            "items": [serialize_post_for_viewer(p) for p in public_posts.items],
+            "total": public_posts.total,
+            "page": public_posts.page,
+            "pages": public_posts.pages,
+            "per_page": public_posts.per_page,
+        }
     }), 200
 
 # ----------------- NOTIFICATIONS -----------------
@@ -1332,9 +1724,27 @@ def get_user_public(user_id):
 @jwt_required()
 def get_notifications():
     user_id = int(get_jwt_identity())
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
     notifications = Notification.query.filter_by(user_id=user_id)\
-        .order_by(Notification.created_at.desc()).all()
-    return jsonify([n.serialize() for n in notifications]), 200
+        .order_by(Notification.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        "items": [n.serialize() for n in notifications.items],
+        "total": notifications.total,
+        "page": notifications.page,
+        "pages": notifications.pages,
+        "per_page": notifications.per_page,
+        "unread_count": Notification.query.filter_by(user_id=user_id, is_read=False).count(),
+    }), 200
+
+
+@api.route('/notifications/unread-count', methods=['GET'])
+@jwt_required()
+def notifications_unread_count():
+    user_id = int(get_jwt_identity())
+    unread = Notification.query.filter_by(user_id=user_id, is_read=False).count()
+    return jsonify({"unread_count": unread}), 200
+
 
 @api.route('/notifications/<int:notification_id>/read', methods=['POST'])
 @jwt_required()
@@ -1346,6 +1756,16 @@ def mark_notification_read(notification_id):
     notification.is_read = True
     db.session.commit()
     return jsonify({"msg": "Notificación marcada como leída"}), 200
+
+
+@api.route('/notifications/read-all', methods=['POST'])
+@jwt_required()
+def mark_all_notifications_read():
+    user_id = int(get_jwt_identity())
+    Notification.query.filter_by(user_id=user_id, is_read=False).update({"is_read": True}, synchronize_session=False)
+    db.session.commit()
+    return jsonify({"msg": "Todas las notificaciones marcadas como leídas"}), 200
+
 
 @api.route('/notifications/clear-read', methods=['DELETE'])
 @jwt_required()

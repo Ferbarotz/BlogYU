@@ -16,10 +16,6 @@ depends_on = None
 
 
 def upgrade():
-    # Aditivo: solo crea la tabla si no existe (la app también la asegura al arrancar).
-    bind = op.get_bind()
-    if 'token_blocklist' in sa.inspect(bind).get_table_names():
-        return
     op.create_table(
         'token_blocklist',
         sa.Column('id', sa.Integer(), nullable=False),

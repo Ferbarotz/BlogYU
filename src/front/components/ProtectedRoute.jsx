@@ -14,7 +14,9 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (adminOnly && !user?.is_admin) {
+  const isAdmin = !!(user && (user.is_admin || user.role === "admin" || user.role === "superuser"));
+
+  if (adminOnly && !isAdmin) {
     return <Navigate to="/" replace />;
   }
 

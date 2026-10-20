@@ -71,8 +71,8 @@ Arranca Flask en el puerto 5000 **primero**, luego `npm start`. El dev server de
 ### Esquema y `create_all` vs Alembic
 
 - El historial de migraciones se **consolidó en un baseline único**: `migrations/versions/440f3ce32eef_baseline_schema.py` (contiene las 8 tablas completas). Las migraciones antiguas (rotas/incompletas) están archivadas en `migrations/versions/_archive/` y Alembic no las lee.
-- `AUTO_CREATE_DB` (en `config.py`): `True` en desarrollo (permite `db.create_all()` al arrancar para trabajar sin migrar) y `False` en producción (Alembic es la única fuente de verdad). Se puede forzar con la env var `AUTO_CREATE_DB=true/false`.
-- **Producción**: el `Procfile` tiene una fase `release` que ejecuta `flask db upgrade` automáticamente en cada despliegue. No se usa `create_all` en prod.
+- `AUTO_CREATE_DB` fue eliminado del flujo: el esquema se gestiona únicamente con migraciones de Alembic (`flask db upgrade`) en todos los entornos.
+- **Producción**: el `Procfile` tiene una fase `release` que ejecuta `flask db upgrade` automáticamente en cada despliegue.
 - **BD de prod EXISTENTE creada antes con `create_all`** (ya tiene las tablas): márquala una sola vez con `FLASK_APP=src.api:create_app flask db stamp 440f3ce32eef` antes de confiar en `upgrade` (si no, el baseline fallaría con "table already exists").
 - Regla: BD vacía → `flask db upgrade`; BD que ya tiene las tablas → `flask db stamp 440f3ce32eef`.
 - Al cambiar modelos: `flask db migrate -m "descripción"` + `flask db upgrade`.
@@ -88,7 +88,7 @@ Requeridas para la funcionalidad completa (ver `src/api/config.py`). El `.env` e
 | `SECRET_KEY` | Secret de Flask |
 | `JWT_SECRET_KEY` | Firma de JWT |
 | `CLOUDINARY_URL` | Subida de imágenes (requerida para imágenes de posts/rutas) |
-| `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Emails de restablecimiento de contraseña |
+| `SENDGRID_API_KEY`, `SENDGRID_SENDER_EMAIL`, `SENDGRID_SENDER_NAME`, `EMAIL_SUPPRESS_SEND` | Emails de restablecimiento de contraseña |
 | `FRONTEND_URL` | Usada en los enlaces de los emails de restablecimiento |
 
 ## Convenciones

@@ -1,5 +1,7 @@
 import os
 
+basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 
 def _clean(v):
     return (v or "").strip().strip('"').strip("'").strip()
@@ -57,11 +59,11 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
-    # --- Correo ---
-    # Flask-Mail no se usa en el flujo actual; todo el envío de correos usa SendGrid
-    # Web API (HTTPS). MAIL_PASSWORD se reutiliza como fallback para la API key de
-    # SendGrid (ver _get_sendgrid_api_key en routes.py).
-    MAIL_PASSWORD       = (os.environ.get("MAIL_PASSWORD") or "").strip() or None
+    # --- Correo (SendGrid Web API por HTTPS) ---
+    SENDGRID_API_KEY = _clean(os.environ.get("SENDGRID_API_KEY")) or None
+    SENDGRID_SENDER_EMAIL = _clean(os.environ.get("SENDGRID_SENDER_EMAIL")) or None
+    SENDGRID_SENDER_NAME = _clean(os.environ.get("SENDGRID_SENDER_NAME")) or "BlogYU"
+    EMAIL_SUPPRESS_SEND = _env_bool("EMAIL_SUPPRESS_SEND", "false")
 
     RATELIMIT_STORAGE_URL = os.environ.get("REDIS_URL", "memory://")
     RATELIMIT_STORAGE_URI = RATELIMIT_STORAGE_URL  # nombre usado por Flask-Limiter 3.x
