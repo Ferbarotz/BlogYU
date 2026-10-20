@@ -22,17 +22,10 @@ def create_app():
     except Exception:
         app.logger.exception("No se pudo crear instance_path (%s)", app.instance_path)
 
-    # Extensiones. Si alguna falla, lo registramos con traceback en vez de silenciarlo.
-    db.init_app(app)
-    migrate.init_app(app, db)
-    jwt.init_app(app)
-    bcrypt.init_app(app)
-    limiter.init_app(app)
-    try:
-        mail.init_app(app)
-    except Exception:
-        # El correo no es crítico para arrancar; se registra pero no se aborta.
-        app.logger.exception("Error inicializando Flask-Mail; el envío de correos no funcionará")
+    # Extensiones. El correo se configura vía SendGrid Web API (HTTPS) ya que Render
+    # bloquea los puertos SMTP salientes. Flask-Mail (SMTP) no se inicializa para
+    # evitar confusiones; si algún día se necesita, descomenta la línea siguiente.
+    # mail.init_app(app)
 
     # JWT Blocklist: invalida tokens en logout
     from .models import TokenBlocklist
@@ -75,12 +68,18 @@ def create_app():
 
     app.register_blueprint(api, url_prefix="/api")
 
-    # Crear tablas automáticamente solo en desarrollo. En producción la fuente de
-    # verdad del esquema es Alembic (flask db upgrade), no create_all().
+    # ¡Ojo! Las migraciones Alembic (flask db upgrade) son la única fuente de verdad
+    # en producción. db.create_all() solo se permite explícitamente en desarrollo
+    # con AUTO_CREATE_DB=true para iterar rápido sin tener que hacer migrate cada cambio.
+    # En producción este bloque se omite intencionadamente.
     if app.config.get("AUTO_CREATE_DB"):
         with app.app_context():
             try:
                 db.create_all()
+                app.logger.warning(
+                    "AUTO_CREATE_DB activado: db.create_all() ejecutado. "
+                    "En producción usa siempre 'flask db upgrade' después de cambiar modelos."
+                )
             except Exception:
                 app.logger.exception("Error en db.create_all()")
 

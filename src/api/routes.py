@@ -31,6 +31,9 @@ def init_cloudinary():
 def upload_to_cloudinary(file_obj, folder="blogyu"):
     """Sube un archivo a Cloudinary y devuelve la URL segura."""
     init_cloudinary()
+    if not os.environ.get("CLOUDINARY_URL"):
+        current_app.logger.error("CLOUDINARY_URL no configurada, no se puede subir a Cloudinary")
+        return None
     try:
         result = cloudinary.uploader.upload(
             file_obj,
@@ -136,7 +139,7 @@ def send_email_via_sendgrid_api(to_email, subject, body_text, timeout=15):
 api = bp = Blueprint('api', __name__)
 
 # Config
-ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic'}
+ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 8 * 1024 * 1024  # 8 MB default
 
@@ -397,9 +400,30 @@ def upload_step_image():
     return jsonify({"url": file_url}), 200
 
 @api.route('/posts', methods=['GET'])
-def get_all_posts():
-    posts = Post.query.order_by(Post.created_at.desc()).all()
-    return jsonify([p.serialize() for p in posts]), 200
+def get_posts():
+    page = request.args.get('page', 1, type=int)
+    per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    search = request.args.get('search')
+    category = request.args.get('category')
+
+    query = Post.query
+    if search:
+        query = query.filter(
+            Post.title.contains(search) | Post.content.contains(search)
+        )
+    if category:
+        query = query.filter(Post.category == category)
+
+    posts = query.order_by(Post.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    return jsonify({
+        "items": [p.serialize() for p in posts.items],
+        "total": posts.total,
+        "page": posts.page,
+        "pages": posts.pages,
+        "per_page": posts.per_page
+    }), 200
 
 @api.route('/my-posts', methods=['GET'])
 @jwt_required()
@@ -462,6 +486,41 @@ def create_post():
     db.session.commit()
     return jsonify({"msg": "Post creado", "post": p.serialize(), "id": p.id}), 201
 
+@api.route('/posts/<int:post_id>/stats', methods=['GET'])
+def post_stats(post_id):
+    post = Post.query.get_or_404(post_id)
+    # Si el post no tiene contador de vistas, inicializamos en 0
+    views = post.views if hasattr(post, 'views') else 0
+    content = post.content or ""
+    # Tiempo de lectura estimado: ~200 palabras por minuto
+    reading_time = max(1, round(len(content.split()) / 200))
+    return jsonify({
+        "views": views,
+        "reading_time_minutes": reading_time,
+        "word_count": len(content.split())
+    }), 200
+
+@api.route('/posts/<int:post_id>/like', methods=['POST'])
+@jwt_required()
+def like_post(post_id):
+    user_id = int(get_jwt_identity())
+    # Si ya dio like, lo quita (unlike); si no, lo agrega
+    existing = Like.query.filter_by(user_id=user_id, post_id=post_id).first()
+    if existing:
+        db.session.delete(existing)
+        db.session.commit()
+        return jsonify({"msg": "Like removido", "likes_count": Post.query.get(post_id).likes.count()})
+    else:
+        like = Like(user_id=user_id, post_id=post_id)
+        db.session.add(like)
+        db.session.commit()
+        return jsonify({"msg": "Like dado", "likes_count": Post.query.get(post_id).likes.count()})
+
+@api.route('/posts/<int:post_id>/likes', methods=['GET'])
+def get_post_likes():
+    count = Like.query.filter_by(post_id=post_id).count()
+    return jsonify({"likes_count": count}), 200
+
 @api.route('/posts/<int:post_id>', methods=['PUT'])
 @jwt_required()
 def update_post(post_id):
@@ -492,6 +551,24 @@ def update_post(post_id):
         current_count = PostImage.query.filter_by(post_id=p.id).count()
         for i, url in enumerate(new_image_urls):
             db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
+
+        # Cleanup: eliminar imágenes de PostImage que ya no se mantienen
+        keep_ids = set(data.get("keep_image_ids", []))
+        for img in list(p.images):
+            if img.id not in keep_ids:
+                # Eliminar de Cloudinary si es URL de Cloudinary
+                if img.url and "/res.cloudinary.com" in img.url:
+                    try:
+                        cloudinary.uploader.destroy(img.url.split("/upload/")[0].split("//")[1])
+                    except Exception:
+                        current_app.logger.exception("Error eliminando imagen antigua de Cloudinary")
+                try:
+                    old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                except Exception:
+                    pass
+                db.session.delete(img)
 
         db.session.flush()
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
@@ -565,6 +642,12 @@ def delete_post(post_id):
                 os.remove(old_path)
         except Exception:
             current_app.logger.exception("Error eliminando imagen principal")
+    # También eliminar de Cloudinary si es una URL de Cloudinary
+    if p.image and "/res.cloudinary.com" in p.image:
+        try:
+            cloudinary.uploader.destroy(p.image.split("/upload/")[0].split("//")[1])
+        except Exception:
+            current_app.logger.exception("Error eliminando imagen de Cloudinary")
 
     # 4. Borrar el post
     db.session.delete(p)
@@ -625,7 +708,54 @@ def add_comment(post_id):
     )
     db.session.add(new_comment)
     db.session.commit()
+
+    # Crear notificación al autor del post si es diferente al comentador
+    post = Post.query.get(post_id)
+    if post and post.user_id and post.user_id != user_id:
+        # Evitar notificación duplicada muy rápida
+        recent = Notification.query.filter_by(
+            user_id=post.user_id,
+            type="comment",
+            related_id=comment.id
+        ).first()
+        if not recent:
+            notif = Notification(
+                user_id=post.user_id,
+                type="comment",
+                related_id=comment.id
+            )
+            db.session.add(notif)
+            db.session.commit()
+
     return jsonify(new_comment.serialize()), 201
+
+@api.route('/posts/<int:post_id>/comments/<int:comment_id>', methods=['PUT'])
+@jwt_required()
+def edit_comment(post_id, comment_id):
+    user_id = int(get_jwt_identity())
+    comment = Comment.query.get_or_404(comment_id)
+    if comment.user_id != user_id:
+        return jsonify({"msg": "No tienes permisos para editar este comentario"}), 403
+    body = request.get_json(silent=True) or {}
+    new_content = (body.get("content") or "").strip()
+    if not new_content:
+        return jsonify({"msg": "El comentario no puede estar vacío"}), 400
+    if len(new_content) > 2000:
+        return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
+    comment.content = new_content
+    db.session.commit()
+    return jsonify(comment.serialize()), 200
+
+@api.route('/posts/<int:post_id>/comments/<int:comment_id>', methods=['DELETE'])
+@jwt_required()
+def delete_comment(post_id, comment_id):
+    user_id = int(get_jwt_identity())
+    comment = Comment.query.get_or_404(comment_id)
+    if comment.user_id != user_id:
+        return jsonify({"msg": "No tienes permisos para borrar este comentario"}), 403
+    db.session.delete(comment)
+    db.session.commit()
+    return jsonify({"msg": "Comentario borrado"}), 200
 
 # ----------------- USERS -----------------
 @api.route('/users/<int:user_id>', methods=['GET'])
@@ -1065,6 +1195,76 @@ def set_home_background():
         current_app.logger.exception("Error guardando home background")
         return jsonify({"msg": "Error interno", "error": "exception"}), 500
 
+# ----------------- ADMIN POSTS -----------------
+@api.route('/admin/posts', methods=['GET'])
+@jwt_required()
+@admin_required
+def admin_get_all_posts():
+    page = request.args.get('page', 1, type=int)
+    per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    status = request.args.get('status')
+    query = Post.query
+    if status in ('published', 'draft'):
+        query = query.filter(Post.status == status)
+    posts = query.order_by(Post.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    return jsonify({
+        "items": [p.serialize() for p in posts.items],
+        "total": posts.total,
+        "page": posts.page,
+        "pages": posts.pages,
+        "per_page": posts.per_page
+    }), 200
+
+@api.route('/admin/posts/<int:post_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def admin_delete_post(post_id):
+    p = Post.query.get_or_404(post_id)
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({"msg": "Post eliminado por admin"}), 200
+
+# ----------------- ADMIN ROUTES -----------------
+@api.route('/admin/routes', methods=['GET'])
+@jwt_required()
+@admin_required
+def admin_get_all_routes():
+    routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).all()
+    return jsonify([r.serialize() for r in routes]), 200
+
+@api.route('/admin/routes/<int:route_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def admin_delete_route(route_id):
+    route = TravelRoute.query.get_or_404(route_id)
+    db.session.delete(route)
+    db.session.commit()
+    return jsonify({"msg": "Ruta eliminada por admin"}), 200
+
+# ----------------- ADMIN STATS -----------------
+@api.route('/admin/stats', methods=['GET'])
+@jwt_required()
+@admin_required
+def admin_stats():
+    users_count = User.query.count()
+    posts_count = Post.query.count()
+    published_count = Post.query.filter_by(status='published').count()
+    draft_count = Post.query.filter_by(status='draft').count()
+    routes_count = TravelRoute.query.count()
+    comments_count = Comment.query.count()
+    likes_count = Like.query.count()
+    return jsonify({
+        "users": users_count,
+        "posts": posts_count,
+        "published": published_count,
+        "drafts": draft_count,
+        "routes": routes_count,
+        "comments": comments_count,
+        "likes": likes_count,
+    }), 200
+
 # ----------------- ADMIN USERS -----------------
 @api.route('/admin/users', methods=['GET'])
 @jwt_required()
@@ -1090,12 +1290,19 @@ def admin_update_user(user_id):
     data = request.get_json(silent=True) or {}
     if 'is_admin' in data:
         user.is_admin = bool(data['is_admin'])
+    if 'role' in data:
+        user.role = str(data['role'])
     db.session.commit()
     return jsonify(user.serialize()), 200
 
 @api.route('/users/<int:user_id>/public', methods=['GET'])
 def get_user_public(user_id):
     user = User.query.get_or_404(user_id)
+
+    # Cuentas
+    posts_count = Post.query.filter_by(user_id=user_id).count()
+    routes_count = TravelRoute.query.filter_by(user_id=user_id).count()
+    likes_given = Like.query.filter_by(user_id=user_id).count()
 
     social = {}
     if hasattr(user, 'social') and isinstance(getattr(user, 'social'), dict):
@@ -1109,18 +1316,51 @@ def get_user_public(user_id):
     return jsonify({
         "id": user.id,
         "name": getattr(user, "name", None),
+        "email": getattr(user, "email", None),
         "profile_pic": getattr(user, "profile_pic", None),
         "background": getattr(user, "background", None),
-        "profileShape": getattr(user, "profile_shape", None) or getattr(user, "profileShape", None),
+        "role": getattr(user, "role", "user"),
+        "posts_count": posts_count,
+        "routes_count": routes_count,
+        "likes_given": likes_given,
+        "joined_at": user.created_at.isoformat() if hasattr(user, 'created_at') else None,
         "social": social,
     }), 200
+
+# ----------------- NOTIFICATIONS -----------------
+@api.route('/notifications', methods=['GET'])
+@jwt_required()
+def get_notifications():
+    user_id = int(get_jwt_identity())
+    notifications = Notification.query.filter_by(user_id=user_id)\
+        .order_by(Notification.created_at.desc()).all()
+    return jsonify([n.serialize() for n in notifications]), 200
+
+@api.route('/notifications/<int:notification_id>/read', methods=['POST'])
+@jwt_required()
+def mark_notification_read(notification_id):
+    user_id = int(get_jwt_identity())
+    notification = Notification.query.get_or_404(notification_id)
+    if notification.user_id != user_id:
+        return jsonify({"msg": "No tienes permisos"}), 403
+    notification.is_read = True
+    db.session.commit()
+    return jsonify({"msg": "Notificación marcada como leída"}), 200
+
+@api.route('/notifications/clear-read', methods=['DELETE'])
+@jwt_required()
+def clear_read_notifications():
+    user_id = int(get_jwt_identity())
+    Notification.query.filter_by(user_id=user_id, is_read=True).delete(synchronize_session=False)
+    db.session.commit()
+    return jsonify({"msg": "Notificaciones leídas borradas"}), 200
 
 @api.route('/api/uploads/list', methods=['GET'])
 def list_uploads():
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     try:
         files = os.listdir(uploads_dir)
-        image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.heic', '.avif'))]
+        image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif'))]
         return jsonify({"files": image_files}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
