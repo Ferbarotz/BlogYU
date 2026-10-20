@@ -5,7 +5,7 @@ from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
 from .config import Config
-from .extensions import db, bcrypt, mail, jwt, migrate, limiter
+from .extensions import db, bcrypt, jwt, migrate, limiter
 from .routes import api
 from .models import User
 
@@ -22,10 +22,12 @@ def create_app():
     except Exception:
         app.logger.exception("No se pudo crear instance_path (%s)", app.instance_path)
 
-    # Extensiones. El correo se configura vía SendGrid Web API (HTTPS) ya que Render
-    # bloquea los puertos SMTP salientes. Flask-Mail (SMTP) no se inicializa para
-    # evitar confusiones; si algún día se necesita, descomenta la línea siguiente.
-    # mail.init_app(app)
+    # Extensiones
+    db.init_app(app)
+    bcrypt.init_app(app)
+    jwt.init_app(app)
+    migrate.init_app(app, db)
+    limiter.init_app(app)
 
     # JWT Blocklist: invalida tokens en logout
     from .models import TokenBlocklist
