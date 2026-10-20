@@ -7,12 +7,13 @@ import { API_BASE } from "../api/backend";
 const Posts = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchPosts = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/posts`);
+        const res = await fetch(`${API_BASE}/api/posts?page=${page}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setPosts(Array.isArray(data) ? data : data.posts || []);
@@ -23,7 +24,8 @@ const Posts = () => {
       }
     };
     fetchPosts();
-  }, []);
+    return () => {};
+  }, [page]);
 
   if (loading) {
     return (
@@ -86,7 +88,7 @@ const Posts = () => {
 
         {posts.length === 0 ? (
           <div className="text-center py-5">
-            <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📝</div>
+            <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>[Sin posts]</div>
             <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>No hay publicaciones todavía.</p>
           </div>
         ) : (
@@ -98,6 +100,16 @@ const Posts = () => {
             ))}
           </div>
         )}
+
+        <div className="text-center py-4">
+          <button
+            onClick={() => setPage(prev => prev + 1)}
+            className="btn btn-outline-secondary"
+            style={{ borderColor: "#00f2fe", color: "#00f2fe" }}
+          >
+            Cargar más
+          </button>
+        </div>
       </div>
 
       <style>{`body { background: #0d1117 !important; }`}</style>

@@ -1,8 +1,8 @@
 # src/api/models.py
 from .extensions import db
 from datetime import datetime
-import urllib.parse
 from werkzeug.security import generate_password_hash, check_password_hash
+import bcrypt
 
 
 class User(db.Model):
@@ -18,11 +18,14 @@ class User(db.Model):
     profile_pic = db.Column(db.String(512), nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
     location = db.Column(db.String(200), nullable=True)
+    role = db.Column(db.String(50), default="user")  # user | moderator | editor | admin
 
     # Relaciones con cascada — al borrar User se borran sus posts, rutas y favoritos
     posts = db.relationship("Post", back_populates="author", cascade="all, delete-orphan", lazy=True)
     routes = db.relationship("TravelRoute", back_populates="author", cascade="all, delete-orphan", lazy=True)
     favorites = db.relationship("Favorite", backref=db.backref("user_fav", lazy=True), cascade="all, delete-orphan", lazy="dynamic")
+    likes = db.relationship("Like", backref="user", cascade="all, delete-orphan", lazy="dynamic")
+    notifications = db.relationship("Notification", backref="user", cascade="all, delete-orphan", lazy="dynamic")
 
     @property
     def password(self):
@@ -48,6 +51,7 @@ class User(db.Model):
             "is_active": self.is_active,
             "background": self.background,
             "is_admin": self.is_admin,
+            "role": self.role,
             "profile_pic": getattr(self, "profile_pic", None),
             "location": self.location,
         }
@@ -62,6 +66,8 @@ class Post(db.Model):
     category = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    status = db.Column(db.String(20), default="published")  # draft | published
+    views = db.Column(db.Integer, default=0)  # contador de vistas
 
     images = db.relationship("PostImage", backref="post", cascade="all, delete-orphan", lazy=True)
     # back_populates en vez de backref para evitar conflicto con User.posts
@@ -74,29 +80,14 @@ class Post(db.Model):
         except Exception:
             created = None
 
-        image_url = None
-        raw = getattr(self, "image", None)
-        if raw:
-            try:
-                parsed = urllib.parse.urlparse(raw)
-                if parsed.scheme and parsed.netloc:
-                    if "/api/uploads/" in parsed.path:
-                        image_url = parsed.path
-                    else:
-                        image_url = parsed.path or raw
-                else:
-                    if raw.startswith("/"):
-                        image_url = raw
-                    else:
-                        image_url = f"/api/uploads/{raw}" if "/" not in raw else raw
-            except Exception:
-                image_url = raw
+        # La imagen viene de Cloudinary ya formateada; si es una URL completa la usamos tal cual.
+        image_url = self.image if self.image else None
 
         author = None
-        if getattr(self, "author", None):
+        if self.author:
             u = self.author
             author = {
-                "id": getattr(u, "id", None),
+                "id": u.id,
                 "email": getattr(u, "email", None),
                 "name": getattr(u, "name", None),
                 "is_active": getattr(u, "is_active", None),
@@ -112,7 +103,8 @@ class Post(db.Model):
             "image": image_url,
             "category": self.category,
             "author": author,
-            "images": [img.serialize() for img in self.images]
+            "images": [img.serialize() for img in self.images],
+            "status": self.status,
         }
 
 
@@ -243,7 +235,7 @@ class RouteStepImage(db.Model):
 class Favorite(db.Model):
     __tablename__ = "favorites"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, nullable=False)
     item_type = db.Column(db.String(50), nullable=False)
     item_id = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -252,6 +244,38 @@ class Favorite(db.Model):
         db.UniqueConstraint('user_id', 'item_type', 'item_id', name='uq_user_item_favorite'),
     )
 
+
+class Like(db.Model):
+    """Reacción/like visible en posts."""
+    __tablename__ = "likes"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'post_id', name='uq_user_post_like'),
+    )
+
+
+class Notification(db.Model):
+    """Notificaciones para los usuarios (comentarios, likes, etc.)."""
+    __tablename__ = "notifications"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    type = db.Column(db.String(50), nullable=False)  # "comment", "like", "follow"
+    related_id = db.Column(db.Integer, nullable=False)  # ID del post, comentario, usuario
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "type": self.type,
+            "related_id": self.related_id,
+            "is_read": self.is_read,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class TokenBlocklist(db.Model):
