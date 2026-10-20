@@ -50,10 +50,10 @@ class User(db.Model):
             "email": self.email,
             "is_active": self.is_active,
             "background": self.background,
+            "profile_pic": self.profile_pic,
+            "location": self.location,
             "is_admin": self.is_admin,
             "role": self.role,
-            "profile_pic": getattr(self, "profile_pic", None),
-            "location": self.location,
         }
 
 
@@ -80,8 +80,6 @@ class Post(db.Model):
         except Exception:
             created = None
 
-        # La imagen viene de Cloudinary ya formateada; si es una URL completa la usamos tal cual.
-        image_url = self.image if self.image else None
 
         author = None
         if self.author:
@@ -100,7 +98,7 @@ class Post(db.Model):
             "content": self.content,
             "user_id": self.user_id,
             "created_at": created,
-            "image": image_url,
+            "image": self.image,
             "category": self.category,
             "author": author,
             "images": [img.serialize() for img in self.images],

@@ -168,20 +168,25 @@ useEffect(() => {
     setLoading(true);
     try {
       const [usersRes, postsRes, routesRes] = await Promise.all([
-        fetch(`${API_BASE}/api/admin/users`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/api/posts`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/api/routes`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/api/admin/users?per_page=50`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/api/admin/posts?per_page=50`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/api/admin/routes?per_page=50`, { headers: authHeaders() }),
       ]);
-      const usersList = usersRes.ok ? await usersRes.json() : [];
-      const postsList = postsRes.ok ? await postsRes.json() : [];
-      const routesList = routesRes.ok ? await routesRes.json() : [];
-      setUsers(Array.isArray(usersList) ? usersList : []);
-      setPosts(Array.isArray(postsList) ? postsList : []);
-      setRoutes(Array.isArray(routesList) ? routesList : []);
+      const usersPayload = usersRes.ok ? await usersRes.json() : [];
+      const postsPayload = postsRes.ok ? await postsRes.json() : [];
+      const routesPayload = routesRes.ok ? await routesRes.json() : [];
+
+      const usersList = Array.isArray(usersPayload) ? usersPayload : (usersPayload.items || []);
+      const postsList = Array.isArray(postsPayload) ? postsPayload : (postsPayload.items || []);
+      const routesList = Array.isArray(routesPayload) ? routesPayload : (routesPayload.items || []);
+
+      setUsers(usersList);
+      setPosts(postsList);
+      setRoutes(routesList);
       setStats({
-        users: Array.isArray(usersList) ? usersList.length : 0,
-        posts: Array.isArray(postsList) ? postsList.length : 0,
-        routes: Array.isArray(routesList) ? routesList.length : 0,
+        users: Array.isArray(usersPayload) ? usersList.length : (usersPayload.total ?? usersList.length),
+        posts: Array.isArray(postsPayload) ? postsList.length : (postsPayload.total ?? postsList.length),
+        routes: Array.isArray(routesPayload) ? routesList.length : (routesPayload.total ?? routesList.length),
       });
     } catch (err) {
       console.error("Error cargando datos admin:", err);
@@ -231,7 +236,7 @@ useEffect(() => {
 
   const deletePostConfirmed = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/api/posts/${id}`, {
+      const res = await fetch(`${API_BASE}/api/admin/posts/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
@@ -256,7 +261,7 @@ useEffect(() => {
 
   const deleteRouteConfirmed = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/api/routes/${id}`, {
+      const res = await fetch(`${API_BASE}/api/admin/routes/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });

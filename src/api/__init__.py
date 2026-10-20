@@ -5,7 +5,7 @@ from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
 from .config import Config
-from .extensions import db, bcrypt, mail, jwt, migrate, limiter
+from .extensions import db, bcrypt, jwt, migrate, limiter
 from .routes import api
 from .models import User
 
@@ -22,20 +22,15 @@ def create_app():
     except Exception:
         app.logger.exception("No se pudo crear instance_path (%s)", app.instance_path)
 
-    # Extensiones. El correo se configura vía SendGrid Web API (HTTPS) ya que Render
-    # bloquea los puertos SMTP salientes. Flask-Mail (SMTP) no se inicializa para
-    # evitar confusiones; si algún día se necesita, descomenta la línea siguiente.
-    # mail.init_app(app)
+    # Extensiones
+    db.init_app(app)
+    bcrypt.init_app(app)
+    jwt.init_app(app)
+    migrate.init_app(app, db)
+    limiter.init_app(app)
 
     # JWT Blocklist: invalida tokens en logout
     from .models import TokenBlocklist
-
-    # Crea SOLO la tabla token_blocklist si no existe (aditivo, no toca datos).
-    with app.app_context():
-        try:
-            TokenBlocklist.__table__.create(bind=db.engine, checkfirst=True)
-        except Exception:
-            app.logger.exception("No se pudo asegurar la tabla token_blocklist")
 
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
@@ -68,20 +63,8 @@ def create_app():
 
     app.register_blueprint(api, url_prefix="/api")
 
-    # ¡Ojo! Las migraciones Alembic (flask db upgrade) son la única fuente de verdad
-    # en producción. db.create_all() solo se permite explícitamente en desarrollo
-    # con AUTO_CREATE_DB=true para iterar rápido sin tener que hacer migrate cada cambio.
-    # En producción este bloque se omite intencionadamente.
-    if app.config.get("AUTO_CREATE_DB"):
-        with app.app_context():
-            try:
-                db.create_all()
-                app.logger.warning(
-                    "AUTO_CREATE_DB activado: db.create_all() ejecutado. "
-                    "En producción usa siempre 'flask db upgrade' después de cambiar modelos."
-                )
-            except Exception:
-                app.logger.exception("Error en db.create_all()")
+    # La base de datos se gestiona exclusivamente con migraciones:
+    # ejecutar siempre `flask db upgrade` tras cambios de esquema.
 
     @app.cli.command("create-admin")
     @click.option("--email", prompt=True, help="Email del administrador")

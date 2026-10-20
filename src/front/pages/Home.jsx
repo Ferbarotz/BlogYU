@@ -51,9 +51,12 @@ const Home = () => {
         const postsData = postsRes.ok ? await postsRes.json() : [];
         const routesData = routesRes.ok ? await routesRes.json() : [];
 
+        const postsList = Array.isArray(postsData) ? postsData : (postsData.items || postsData.posts || []);
+        const routesList = Array.isArray(routesData) ? routesData : (routesData.items || routesData.routes || []);
+
         const combined = [
-          ...(Array.isArray(postsData) ? postsData : []).map((p) => ({ ...p, type: "post" })),
-          ...(Array.isArray(routesData) ? routesData : []).map((r) => ({ ...r, type: "route" }))
+          ...postsList.map((p) => ({ ...p, type: "post" })),
+          ...routesList.map((r) => ({ ...r, type: "route" }))
         ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         setFeed(combined);
