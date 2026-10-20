@@ -10,9 +10,8 @@ from functools import wraps
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
-from flask_mail import Message
 
-from .extensions import db, bcrypt, mail, limiter
+from .extensions import db, bcrypt, limiter
 from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage, TokenBlocklist
 
 # Cloudinary

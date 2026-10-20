@@ -1,5 +1,7 @@
 import os
 
+basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 
 def _clean(v):
     return (v or "").strip().strip('"').strip("'").strip()
