@@ -24,6 +24,7 @@ const NewPost = () => {
   const [error, setError]           = useState(null);
   const [dragOver, setDragOver]     = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [targetStatus, setTargetStatus] = useState("published");
 
   useEffect(() => {
     let mounted = true;
@@ -92,6 +93,7 @@ const NewPost = () => {
       fd.append("title",    title);
       fd.append("content",  content);
       fd.append("category", category);
+      fd.append("status", targetStatus);
       imageFiles.forEach(f => fd.append("images", f));
 
       await new Promise((resolve, reject) => {
@@ -479,6 +481,7 @@ const NewPost = () => {
           <div style={{ display: "flex", gap: "12px" }}>
             <button
               type="submit"
+              onClick={() => setTargetStatus("published")}
               disabled={saving}
               className="btn fw-bold rounded-pill"
               style={{
@@ -493,7 +496,25 @@ const NewPost = () => {
                 cursor: saving ? "not-allowed" : "pointer"
               }}
             >
-              {saving ? "⏳ Publicando..." : "🚀 Publicar"}
+              {saving && targetStatus === "published" ? "⏳ Publicando..." : "🚀 Publicar"}
+            </button>
+
+            <button
+              type="submit"
+              onClick={() => setTargetStatus("draft")}
+              disabled={saving}
+              className="btn fw-bold rounded-pill"
+              style={{
+                background: "rgba(249,212,35,0.15)",
+                border: "1px solid rgba(249,212,35,0.45)",
+                color: "#f9d423",
+                padding: "14px 20px",
+                fontSize: "0.95rem",
+                letterSpacing: "1px",
+                cursor: saving ? "not-allowed" : "pointer"
+              }}
+            >
+              {saving && targetStatus === "draft" ? "⏳ Guardando..." : "💾 Guardar borrador"}
             </button>
 
             <button

@@ -13,7 +13,15 @@ from functools import wraps
 
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
-from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
+from flask_jwt_extended import (
+    create_access_token,
+    jwt_required,
+    get_jwt_identity,
+    decode_token,
+    get_jwt,
+    verify_jwt_in_request,
+)
+from sqlalchemy import or_, func
 from PIL import Image, UnidentifiedImageError
 
 from .extensions import db, limiter
@@ -246,22 +254,94 @@ def cleanup_post_cloudinary_assets(post):
         delete_cloudinary_asset_by_url(url)
 
 
-def admin_required(fn):
-    """Decorator to require is_admin on current JWT user."""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        try:
-            user_id = get_jwt_identity()
-            if user_id is None:
-                return jsonify({"msg": "No autorizado (sin token)"}), 401
-            u = User.query.get(int(user_id))
-        except Exception:
-            return jsonify({"msg": "No autorizado"}), 401
+ROLE_PRIORITY = {
+    "user": 0,
+    "editor": 1,
+    "moderator": 2,
+    "admin": 3,
+}
 
-        if not getattr(u, "is_admin", False):
-            return jsonify({"msg": "Acceso restringido: admin requerido"}), 403
-        return fn(*args, **kwargs)
-    return wrapper
+
+def normalize_role(user):
+    if not user:
+        return "user"
+    if getattr(user, "is_admin", False):
+        return "admin"
+    role = (getattr(user, "role", None) or "user").strip().lower()
+    return role if role in ROLE_PRIORITY else "user"
+
+
+def has_any_role(user, *roles):
+    if not user:
+        return False
+    user_level = ROLE_PRIORITY.get(normalize_role(user), 0)
+    required = [ROLE_PRIORITY.get(r, -1) for r in roles]
+    return any(user_level >= level for level in required)
+
+
+def roles_required(*roles):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                user_id = get_jwt_identity()
+                if user_id is None:
+                    return jsonify({"msg": "No autorizado (sin token)"}), 401
+                user = User.query.get(int(user_id))
+            except Exception:
+                return jsonify({"msg": "No autorizado"}), 401
+
+            if not user or not has_any_role(user, *roles):
+                return jsonify({"msg": "Acceso restringido"}), 403
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def admin_required(fn):
+    """Compatibilidad hacia atrás: exige rol admin o is_admin=true."""
+    return roles_required("admin")(fn)
+
+
+def get_optional_user_id():
+    """Obtiene user_id opcional desde JWT si existe y es válido."""
+    try:
+        verify_jwt_in_request(optional=True)
+        identity = get_jwt_identity()
+        return int(identity) if identity is not None else None
+    except Exception:
+        return None
+
+
+def can_view_post(post, viewer_user):
+    if not post:
+        return False
+    if post.is_hidden:
+        if not viewer_user:
+            return False
+        if viewer_user.id == post.user_id:
+            return True
+        return has_any_role(viewer_user, "admin", "moderator")
+
+    if post.status == "published":
+        return True
+
+    if not viewer_user:
+        return False
+    if viewer_user.id == post.user_id:
+        return True
+    return has_any_role(viewer_user, "admin")
+
+
+def serialize_post_for_viewer(post, viewer_user_id=None):
+    data = post.serialize()
+    if viewer_user_id:
+        data["liked_by_me"] = Like.query.filter_by(user_id=viewer_user_id, post_id=post.id).first() is not None
+    else:
+        data["liked_by_me"] = False
+    return data
 
 # ----------------- Root / Health -----------------
 @api.route("/", methods=["GET"])
@@ -497,54 +577,94 @@ def upload_step_image():
     current_app.logger.info(f"URL devuelta para imagen: {file_url}")
     return jsonify({"url": file_url}), 200
 
+def _apply_post_filters(query, viewer_user, include_mine=False):
+    q = (request.args.get('q') or request.args.get('search') or '').strip()
+    category = (request.args.get('category') or '').strip()
+    status = (request.args.get('status') or '').strip().lower()
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Post.title.ilike(like), Post.content.ilike(like), Post.category.ilike(like)))
+
+    if category:
+        query = query.filter(func.lower(Post.category) == category.lower())
+
+    if include_mine and viewer_user:
+        if status in ('draft', 'published'):
+            query = query.filter(Post.status == status)
+        query = query.filter(or_(Post.user_id == viewer_user.id, Post.status == 'published'))
+    else:
+        query = query.filter(Post.status == 'published')
+
+    query = query.filter(Post.is_hidden.is_(False))
+    return query
+
+
 @api.route('/posts', methods=['GET'])
 def get_posts():
+    viewer_user_id = get_optional_user_id()
+    viewer_user = User.query.get(viewer_user_id) if viewer_user_id else None
+
     default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
     page, per_page = parse_pagination_args(default_per_page=default_per_page)
-    search = request.args.get('search')
-    category = request.args.get('category')
 
     query = Post.query
-    if search:
-        query = query.filter(
-            Post.title.contains(search) | Post.content.contains(search)
-        )
-    if category:
-        query = query.filter(Post.category == category)
+    include_mine = request.args.get('mine') in ('1', 'true', 'yes')
+    query = _apply_post_filters(query, viewer_user, include_mine=include_mine)
 
-    posts = query.order_by(Post.created_at.desc()).paginate(
-        page=page, per_page=per_page, error_out=False
-    )
+    posts = query.order_by(Post.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     return jsonify({
-        "items": [p.serialize() for p in posts.items],
+        "items": [serialize_post_for_viewer(p, viewer_user_id) for p in posts.items],
         "total": posts.total,
         "page": posts.page,
         "pages": posts.pages,
         "per_page": posts.per_page
     }), 200
 
+
+@api.route('/posts/search', methods=['GET'])
+def search_posts():
+    return get_posts()
+
+
 @api.route('/my-posts', methods=['GET'])
 @jwt_required()
 def get_user_posts():
     user_id = int(get_jwt_identity())
+    user = User.query.get_or_404(user_id)
     default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
     page, per_page = parse_pagination_args(default_per_page=default_per_page)
 
-    posts = Post.query.filter_by(user_id=user_id).order_by(Post.created_at.desc()).paginate(
-        page=page, per_page=per_page, error_out=False
-    )
+    status = (request.args.get('status') or '').strip().lower()
+    query = Post.query.filter_by(user_id=user_id)
+    if status in ('draft', 'published'):
+        query = query.filter(Post.status == status)
+
+    posts = query.order_by(Post.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     return jsonify({
-        "items": [p.serialize() for p in posts.items],
+        "items": [serialize_post_for_viewer(p, user.id) for p in posts.items],
         "total": posts.total,
         "page": posts.page,
         "pages": posts.pages,
         "per_page": posts.per_page,
     }), 200
 
+
 @api.route('/posts/<int:post_id>', methods=['GET'])
 def get_post(post_id):
+    viewer_user_id = get_optional_user_id()
+    viewer_user = User.query.get(viewer_user_id) if viewer_user_id else None
+
     post = Post.query.get_or_404(post_id)
-    return jsonify(post.serialize()), 200
+    if not can_view_post(post, viewer_user):
+        return jsonify({"msg": "Post no disponible"}), 404
+
+    if not (viewer_user and viewer_user.id == post.user_id):
+        post.views = int(post.views or 0) + 1
+        db.session.commit()
+
+    return jsonify(serialize_post_for_viewer(post, viewer_user_id)), 200
+
 
 @api.route('/posts', methods=['POST'])
 @jwt_required()
@@ -558,10 +678,12 @@ def create_post():
         content = data.get('content')
         category = data.get('category')
         saved_urls = data.get('images', [])
+        status = (data.get('status') or 'published').strip().lower()
     else:
         title = request.form.get('title')
         content = request.form.get('content')
         category = request.form.get('category')
+        status = (request.form.get('status') or 'published').strip().lower()
 
         image_files = [f for f in request.files.getlist('images') if f and f.filename]
         for image_file in image_files:
@@ -570,9 +692,12 @@ def create_post():
 
             url, upload_error = upload_to_cloudinary(image_file, folder="blogyu/posts")
             if not url:
-                status = 503 if upload_error and "CLOUDINARY_URL" in upload_error else 500
-                return jsonify({"msg": "No se pudo subir una imagen del post", "error": upload_error}), status
+                status_code = 503 if upload_error and "CLOUDINARY_URL" in upload_error else 500
+                return jsonify({"msg": "No se pudo subir una imagen del post", "error": upload_error}), status_code
             saved_urls.append(url)
+
+    if status not in ('draft', 'published'):
+        status = 'published'
 
     if not title or not content:
         return jsonify({"msg": "title and content required"}), 400
@@ -584,8 +709,14 @@ def create_post():
     main_image = saved_urls[0] if saved_urls else None
 
     p = Post(
-        title=title, content=content, image=main_image,
-        user_id=user_id, created_at=datetime.utcnow(), category=category
+        title=title,
+        content=content,
+        image=main_image,
+        user_id=user_id,
+        created_at=datetime.utcnow(),
+        category=category,
+        status=status,
+        is_hidden=False,
     )
     db.session.add(p)
     db.session.flush()
@@ -594,49 +725,73 @@ def create_post():
         db.session.add(PostImage(url=url, order=order, post_id=p.id))
 
     db.session.commit()
-    return jsonify({"msg": "Post creado", "post": p.serialize(), "id": p.id}), 201
+    return jsonify({"msg": "Post creado", "post": serialize_post_for_viewer(p, user_id), "id": p.id}), 201
+
 
 @api.route('/posts/<int:post_id>/stats', methods=['GET'])
 def post_stats(post_id):
     post = Post.query.get_or_404(post_id)
-    # Si el post no tiene contador de vistas, inicializamos en 0
-    views = post.views if hasattr(post, 'views') else 0
-    content = post.content or ""
-    # Tiempo de lectura estimado: ~200 palabras por minuto
-    reading_time = max(1, round(len(content.split()) / 200))
+    data = post.serialize()
     return jsonify({
-        "views": views,
-        "reading_time_minutes": reading_time,
-        "word_count": len(content.split())
+        "views": data.get("views", 0),
+        "reading_time_minutes": data.get("reading_time_minutes", 1),
+        "word_count": data.get("word_count", 0),
+        "like_count": data.get("like_count", 0),
     }), 200
+
 
 @api.route('/posts/<int:post_id>/like', methods=['POST'])
 @jwt_required()
 def like_post(post_id):
     user_id = int(get_jwt_identity())
-    # Si ya dio like, lo quita (unlike); si no, lo agrega
+    post = Post.query.get_or_404(post_id)
+
+    if post.status != 'published' or post.is_hidden:
+        return jsonify({"msg": "No se puede reaccionar a este post"}), 400
+
     existing = Like.query.filter_by(user_id=user_id, post_id=post_id).first()
     if existing:
         db.session.delete(existing)
-        db.session.commit()
-        return jsonify({"msg": "Like removido", "likes_count": Post.query.get(post_id).likes.count()})
+        action = "removed"
     else:
         like = Like(user_id=user_id, post_id=post_id)
         db.session.add(like)
-        db.session.commit()
-        return jsonify({"msg": "Like dado", "likes_count": Post.query.get(post_id).likes.count()})
+        action = "added"
+
+        if post.user_id != user_id:
+            notification = Notification(
+                user_id=post.user_id,
+                type="like",
+                related_id=post_id,
+                post_id=post_id,
+                actor_id=user_id,
+                is_read=False,
+            )
+            db.session.add(notification)
+
+    db.session.commit()
+    likes_count = Like.query.filter_by(post_id=post_id).count()
+    return jsonify({"action": action, "likes_count": likes_count, "liked_by_me": action == "added"}), 200
+
 
 @api.route('/posts/<int:post_id>/likes', methods=['GET'])
 def get_post_likes(post_id):
     count = Like.query.filter_by(post_id=post_id).count()
-    return jsonify({"likes_count": count}), 200
+    viewer_user_id = get_optional_user_id()
+    liked_by_me = False
+    if viewer_user_id:
+        liked_by_me = Like.query.filter_by(post_id=post_id, user_id=viewer_user_id).first() is not None
+    return jsonify({"likes_count": count, "liked_by_me": liked_by_me}), 200
 
 @api.route('/posts/<int:post_id>', methods=['PUT'])
 @jwt_required()
 def update_post(post_id):
     user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(user_id)
     p = Post.query.get_or_404(post_id)
-    if p.user_id != user_id:
+
+    can_edit = (p.user_id == user_id) or has_any_role(current_user, "editor", "admin")
+    if not can_edit:
         return jsonify({"msg": "No tienes permisos"}), 403
 
     removed_urls = []
@@ -646,6 +801,11 @@ def update_post(post_id):
         p.title = data.get("title", p.title)
         p.content = data.get("content", p.content)
         p.category = data.get("category", p.category)
+        status = (data.get("status") or p.status or "published").strip().lower()
+        if status in ("draft", "published"):
+            p.status = status
+        if has_any_role(current_user, "moderator", "admin") and "is_hidden" in data:
+            p.is_hidden = bool(data.get("is_hidden"))
 
         keep_ids_raw = data.get("keep_image_ids")
         keep_ids = set(int(x) for x in (keep_ids_raw or []) if str(x).isdigit()) if keep_ids_raw is not None else None
@@ -664,6 +824,11 @@ def update_post(post_id):
         p.title = request.form.get("title") or p.title
         p.content = request.form.get("content") or p.content
         p.category = request.form.get("category") or p.category
+        form_status = (request.form.get("status") or p.status or "published").strip().lower()
+        if form_status in ("draft", "published"):
+            p.status = form_status
+        if has_any_role(current_user, "moderator", "admin") and request.form.get("is_hidden") is not None:
+            p.is_hidden = str(request.form.get("is_hidden")).lower() in ("1", "true", "yes", "on")
 
         keep_ids_raw = request.form.get("keep_image_ids")
         keep_ids = None
@@ -701,14 +866,15 @@ def update_post(post_id):
     for url in set(filter(None, removed_urls)):
         delete_cloudinary_asset_by_url(url)
 
-    return jsonify(p.serialize()), 200
+    return jsonify(serialize_post_for_viewer(p, user_id)), 200
 
 @api.route('/posts/<int:post_id>', methods=['DELETE'])
 @jwt_required()
 def delete_post(post_id):
     user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(user_id)
     p = Post.query.get_or_404(post_id)
-    if p.user_id != user_id:
+    if p.user_id != user_id and not has_any_role(current_user, "moderator", "admin"):
         return jsonify({"msg": "No tienes permisos"}), 403
 
     cleanup_post_cloudinary_assets(p)
@@ -751,6 +917,12 @@ def get_categories():
 # ----------------- COMMENTS -----------------
 @api.route('/posts/<int:post_id>/comments', methods=['GET'])
 def get_comments(post_id):
+    viewer_user_id = get_optional_user_id()
+    viewer_user = User.query.get(viewer_user_id) if viewer_user_id else None
+    post = Post.query.get_or_404(post_id)
+    if not can_view_post(post, viewer_user):
+        return jsonify({"msg": "Post no disponible"}), 404
+
     comments = Comment.query.filter_by(post_id=post_id).order_by(Comment.created_at.asc()).all()
     return jsonify([c.serialize() for c in comments]), 200
 
@@ -760,65 +932,72 @@ def add_comment(post_id):
     body = request.get_json(silent=True) or {}
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
+    post = Post.query.get_or_404(post_id)
+
+    if post.status != 'published' or post.is_hidden:
+        return jsonify({"msg": "No se puede comentar este post"}), 400
+
     author_name = user.name if user else "Usuario"
     content = (body.get("content") or "").strip()
     if not content:
         return jsonify({"msg": "El comentario no puede estar vacio"}), 400
     if len(content) > 2000:
         return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
-    new_comment = Comment(
-        content=content,
-        author_name=author_name,
-        post_id=post_id,
-        user_id=user_id
-    )
-    db.session.add(new_comment)
-    db.session.commit()
 
-    # Crear notificación al autor del post si es diferente al comentador
-    post = Post.query.get(post_id)
-    if post and post.user_id and post.user_id != user_id:
-        # Evitar notificación duplicada muy rápida
-        recent = Notification.query.filter_by(
+    new_comment = Comment(content=content, author_name=author_name, post_id=post_id, user_id=user_id)
+    db.session.add(new_comment)
+    db.session.flush()
+
+    if post.user_id and post.user_id != user_id:
+        notif = Notification(
             user_id=post.user_id,
             type="comment",
-            related_id=comment.id
-        ).first()
-        if not recent:
-            notif = Notification(
-                user_id=post.user_id,
-                type="comment",
-                related_id=comment.id
-            )
-            db.session.add(notif)
-            db.session.commit()
+            related_id=new_comment.id,
+            post_id=post_id,
+            actor_id=user_id,
+            is_read=False,
+        )
+        db.session.add(notif)
 
+    db.session.commit()
     return jsonify(new_comment.serialize()), 201
+
 
 @api.route('/posts/<int:post_id>/comments/<int:comment_id>', methods=['PUT'])
 @jwt_required()
 def edit_comment(post_id, comment_id):
     user_id = int(get_jwt_identity())
     comment = Comment.query.get_or_404(comment_id)
+    if comment.post_id != post_id:
+        return jsonify({"msg": "Comentario no pertenece al post"}), 400
+
     if comment.user_id != user_id:
         return jsonify({"msg": "No tienes permisos para editar este comentario"}), 403
+
     body = request.get_json(silent=True) or {}
     new_content = (body.get("content") or "").strip()
     if not new_content:
         return jsonify({"msg": "El comentario no puede estar vacío"}), 400
     if len(new_content) > 2000:
         return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
+
     comment.content = new_content
     db.session.commit()
     return jsonify(comment.serialize()), 200
+
 
 @api.route('/posts/<int:post_id>/comments/<int:comment_id>', methods=['DELETE'])
 @jwt_required()
 def delete_comment(post_id, comment_id):
     user_id = int(get_jwt_identity())
+    current_user = User.query.get_or_404(user_id)
     comment = Comment.query.get_or_404(comment_id)
-    if comment.user_id != user_id:
+    if comment.post_id != post_id:
+        return jsonify({"msg": "Comentario no pertenece al post"}), 400
+
+    if comment.user_id != user_id and not has_any_role(current_user, "moderator", "admin"):
         return jsonify({"msg": "No tienes permisos para borrar este comentario"}), 403
+
     db.session.delete(comment)
     db.session.commit()
     return jsonify({"msg": "Comentario borrado"}), 200
@@ -828,7 +1007,8 @@ def delete_comment(post_id, comment_id):
 @jwt_required()
 def get_user(user_id):
     current_user_id = int(get_jwt_identity())
-    if current_user_id != user_id:
+    requester = User.query.get_or_404(current_user_id)
+    if current_user_id != user_id and not has_any_role(requester, "admin"):
         return jsonify({"msg": "No tienes permisos para ver este usuario"}), 403
     user = User.query.get_or_404(user_id)
     try:
@@ -1286,28 +1466,42 @@ def set_home_background():
 # ----------------- ADMIN POSTS -----------------
 @api.route('/admin/posts', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_get_all_posts():
     default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
     page, per_page = parse_pagination_args(default_per_page=default_per_page)
-    status = request.args.get('status')
+    status = (request.args.get('status') or '').strip().lower()
+    q = (request.args.get('q') or '').strip()
+
     query = Post.query
     if status in ('published', 'draft'):
         query = query.filter(Post.status == status)
-    posts = query.order_by(Post.created_at.desc()).paginate(
-        page=page, per_page=per_page, error_out=False
-    )
+
+    if q:
+        like = f"%{q}%"
+        query = query.join(User, User.id == Post.user_id).filter(
+            or_(
+                Post.title.ilike(like),
+                Post.content.ilike(like),
+                Post.category.ilike(like),
+                User.name.ilike(like),
+                User.email.ilike(like),
+            )
+        )
+
+    posts = query.order_by(Post.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     return jsonify({
-        "items": [p.serialize() for p in posts.items],
+        "items": [serialize_post_for_viewer(p) for p in posts.items],
         "total": posts.total,
         "page": posts.page,
         "pages": posts.pages,
-        "per_page": posts.per_page
+        "per_page": posts.per_page,
     }), 200
+
 
 @api.route('/admin/posts/<int:post_id>', methods=['DELETE'])
 @jwt_required()
-@admin_required
+@roles_required('admin', 'moderator')
 def admin_delete_post(post_id):
     p = Post.query.get_or_404(post_id)
     cleanup_post_cloudinary_assets(p)
@@ -1315,12 +1509,26 @@ def admin_delete_post(post_id):
     PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
     db.session.delete(p)
     db.session.commit()
-    return jsonify({"msg": "Post eliminado por admin"}), 200
+    return jsonify({"msg": "Post eliminado"}), 200
+
+
+@api.route('/admin/posts/<int:post_id>/visibility', methods=['PATCH'])
+@jwt_required()
+@roles_required('admin', 'moderator')
+def admin_toggle_post_visibility(post_id):
+    post = Post.query.get_or_404(post_id)
+    data = request.get_json(silent=True) or {}
+    if 'is_hidden' not in data:
+        return jsonify({"msg": "Campo is_hidden requerido"}), 400
+    post.is_hidden = bool(data.get('is_hidden'))
+    db.session.commit()
+    return jsonify({"msg": "Visibilidad actualizada", "post": serialize_post_for_viewer(post)}), 200
+
 
 # ----------------- ADMIN ROUTES -----------------
 @api.route('/admin/routes', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_get_all_routes():
     default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
     page, per_page = parse_pagination_args(default_per_page=default_per_page)
@@ -1335,45 +1543,103 @@ def admin_get_all_routes():
         "per_page": routes.per_page,
     }), 200
 
+
 @api.route('/admin/routes/<int:route_id>', methods=['DELETE'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_delete_route(route_id):
     route = TravelRoute.query.get_or_404(route_id)
     db.session.delete(route)
     db.session.commit()
     return jsonify({"msg": "Ruta eliminada por admin"}), 200
 
+
 # ----------------- ADMIN STATS -----------------
 @api.route('/admin/stats', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_stats():
     users_count = User.query.count()
     posts_count = Post.query.count()
     published_count = Post.query.filter_by(status='published').count()
     draft_count = Post.query.filter_by(status='draft').count()
+    hidden_count = Post.query.filter_by(is_hidden=True).count()
     routes_count = TravelRoute.query.count()
     comments_count = Comment.query.count()
     likes_count = Like.query.count()
+    views_count = db.session.query(func.coalesce(func.sum(Post.views), 0)).scalar() or 0
+
+    by_category_rows = (
+        db.session.query(Post.category, func.count(Post.id))
+        .filter(Post.status == 'published', Post.is_hidden.is_(False))
+        .group_by(Post.category)
+        .all()
+    )
+    posts_by_category = [
+        {"category": (cat or "sin_categoria"), "count": int(total)}
+        for cat, total in by_category_rows
+    ]
+
+    latest_users = User.query.order_by(User.created_at.desc(), User.id.desc()).limit(5).all()
+    latest_posts = Post.query.order_by(Post.created_at.desc(), Post.id.desc()).limit(5).all()
+
     return jsonify({
         "users": users_count,
         "posts": posts_count,
         "published": published_count,
         "drafts": draft_count,
+        "hidden": hidden_count,
         "routes": routes_count,
         "comments": comments_count,
         "likes": likes_count,
+        "views": int(views_count),
+        "posts_by_category": posts_by_category,
+        "latest_users": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "role": normalize_role(u),
+                "is_active": bool(u.is_active),
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
+            for u in latest_users
+        ],
+        "latest_posts": [
+            {
+                "id": p.id,
+                "title": p.title,
+                "status": p.status,
+                "is_hidden": bool(p.is_hidden),
+                "author_name": p.author.name if p.author else None,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in latest_posts
+        ],
     }), 200
+
 
 # ----------------- ADMIN USERS -----------------
 @api.route('/admin/users', methods=['GET'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def get_all_users():
     default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
     page, per_page = parse_pagination_args(default_per_page=default_per_page)
-    users = User.query.order_by(User.id.asc()).paginate(page=page, per_page=per_page, error_out=False)
+    q = (request.args.get('q') or '').strip()
+
+    query = User.query
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                User.name.ilike(like),
+                User.email.ilike(like),
+                User.role.ilike(like),
+            )
+        )
+
+    users = query.order_by(User.id.asc()).paginate(page=page, per_page=per_page, error_out=False)
     return jsonify({
         "items": [u.serialize() for u in users.items],
         "total": users.total,
@@ -1382,58 +1648,75 @@ def get_all_users():
         "per_page": users.per_page,
     }), 200
 
+
 @api.route('/admin/users/<int:user_id>', methods=['DELETE'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_delete_user(user_id):
     user = User.query.get_or_404(user_id)
     db.session.delete(user)
     db.session.commit()
     return jsonify({"msg": "Usuario eliminado"}), 200
 
-@api.route('/admin/users/<int:user_id>', methods=['PUT'])
+
+@api.route('/admin/users/<int:user_id>', methods=['PUT', 'PATCH'])
 @jwt_required()
-@admin_required
+@roles_required('admin')
 def admin_update_user(user_id):
     user = User.query.get_or_404(user_id)
     data = request.get_json(silent=True) or {}
+
+    if 'is_active' in data:
+        user.is_active = bool(data['is_active'])
+
+    if 'role' in data:
+        requested_role = str(data['role']).strip().lower()
+        if requested_role not in ROLE_PRIORITY:
+            return jsonify({"msg": "Rol inválido"}), 400
+        user.role = requested_role
+        user.is_admin = requested_role == 'admin'
+
     if 'is_admin' in data:
         user.is_admin = bool(data['is_admin'])
-    if 'role' in data:
-        user.role = str(data['role'])
+        if user.is_admin:
+            user.role = 'admin'
+        elif normalize_role(user) == 'admin':
+            user.role = 'user'
+
     db.session.commit()
     return jsonify(user.serialize()), 200
+
 
 @api.route('/users/<int:user_id>/public', methods=['GET'])
 def get_user_public(user_id):
     user = User.query.get_or_404(user_id)
+    default_per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    page, per_page = parse_pagination_args(default_per_page=default_per_page)
 
-    # Cuentas
-    posts_count = Post.query.filter_by(user_id=user_id).count()
-    routes_count = TravelRoute.query.filter_by(user_id=user_id).count()
-    likes_given = Like.query.filter_by(user_id=user_id).count()
-
-    social = {}
-    if hasattr(user, 'social') and isinstance(getattr(user, 'social'), dict):
-        social = user.social or {}
-    else:
-        for key in ['twitter', 'instagram', 'tiktok', 'facebook', 'website']:
-            val = getattr(user, f'social_{key}', None) or getattr(user, key, None)
-            if val:
-                social[key] = val
+    public_posts = (
+        Post.query
+        .filter_by(user_id=user_id, status='published', is_hidden=False)
+        .order_by(Post.created_at.desc())
+        .paginate(page=page, per_page=per_page, error_out=False)
+    )
 
     return jsonify({
         "id": user.id,
-        "name": getattr(user, "name", None),
-        "email": getattr(user, "email", None),
-        "profile_pic": getattr(user, "profile_pic", None),
-        "background": getattr(user, "background", None),
-        "role": getattr(user, "role", "user"),
-        "posts_count": posts_count,
-        "routes_count": routes_count,
-        "likes_given": likes_given,
-        "joined_at": user.created_at.isoformat() if hasattr(user, 'created_at') else None,
-        "social": social,
+        "name": user.name,
+        "profile_pic": user.profile_pic,
+        "background": user.background,
+        "role": normalize_role(user),
+        "posts_count": Post.query.filter_by(user_id=user_id, status='published', is_hidden=False).count(),
+        "routes_count": TravelRoute.query.filter_by(user_id=user_id).count(),
+        "likes_given": Like.query.filter_by(user_id=user_id).count(),
+        "joined_at": user.created_at.isoformat() if user.created_at else None,
+        "posts": {
+            "items": [serialize_post_for_viewer(p) for p in public_posts.items],
+            "total": public_posts.total,
+            "page": public_posts.page,
+            "pages": public_posts.pages,
+            "per_page": public_posts.per_page,
+        }
     }), 200
 
 # ----------------- NOTIFICATIONS -----------------
@@ -1451,7 +1734,17 @@ def get_notifications():
         "page": notifications.page,
         "pages": notifications.pages,
         "per_page": notifications.per_page,
+        "unread_count": Notification.query.filter_by(user_id=user_id, is_read=False).count(),
     }), 200
+
+
+@api.route('/notifications/unread-count', methods=['GET'])
+@jwt_required()
+def notifications_unread_count():
+    user_id = int(get_jwt_identity())
+    unread = Notification.query.filter_by(user_id=user_id, is_read=False).count()
+    return jsonify({"unread_count": unread}), 200
+
 
 @api.route('/notifications/<int:notification_id>/read', methods=['POST'])
 @jwt_required()
@@ -1463,6 +1756,16 @@ def mark_notification_read(notification_id):
     notification.is_read = True
     db.session.commit()
     return jsonify({"msg": "Notificación marcada como leída"}), 200
+
+
+@api.route('/notifications/read-all', methods=['POST'])
+@jwt_required()
+def mark_all_notifications_read():
+    user_id = int(get_jwt_identity())
+    Notification.query.filter_by(user_id=user_id, is_read=False).update({"is_read": True}, synchronize_session=False)
+    db.session.commit()
+    return jsonify({"msg": "Todas las notificaciones marcadas como leídas"}), 200
+
 
 @api.route('/notifications/clear-read', methods=['DELETE'])
 @jwt_required()

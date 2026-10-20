@@ -10,7 +10,7 @@ const EditPost = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [formData, setFormData]             = useState({ title: "", content: "", category: "" });
+  const [formData, setFormData]             = useState({ title: "", content: "", category: "", status: "published" });
   const [existingImages, setExistingImages] = useState([]); // { id, url }
   const [newFiles, setNewFiles]             = useState([]);
   const [newPreviews, setNewPreviews]       = useState([]);
@@ -30,7 +30,8 @@ const EditPost = () => {
         setFormData({
           title:    data.title    || "",
           content:  data.content  || "",
-          category: data.category || "otros"
+          category: data.category || "otros",
+          status:   data.status   || "published"
         });
 
         if (data.images && data.images.length > 0) {
@@ -116,6 +117,7 @@ const EditPost = () => {
       fd.append("title",    formData.title);
       fd.append("content",  formData.content);
       fd.append("category", formData.category);
+      fd.append("status", formData.status || "published");
 
       // ✅ IDs de imágenes existentes que el usuario quiere CONSERVAR
       const keepIds = existingImages
@@ -258,6 +260,43 @@ const EditPost = () => {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* ESTADO */}
+          <div style={{ marginBottom: "20px" }}>
+            <label style={labelStyle}>Estado</label>
+            <div className="d-flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, status: "published" })}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "999px",
+                  border: formData.status === "published" ? "none" : "1px solid rgba(255,255,255,0.15)",
+                  background: formData.status === "published" ? "linear-gradient(135deg,#00f2fe,#4facfe)" : "rgba(255,255,255,0.04)",
+                  color: formData.status === "published" ? "#000" : "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer"
+                }}
+              >
+                Publicado
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, status: "draft" })}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "999px",
+                  border: formData.status === "draft" ? "1px solid rgba(249,212,35,0.45)" : "1px solid rgba(255,255,255,0.15)",
+                  background: formData.status === "draft" ? "rgba(249,212,35,0.18)" : "rgba(255,255,255,0.04)",
+                  color: formData.status === "draft" ? "#f9d423" : "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer"
+                }}
+              >
+                Borrador
+              </button>
             </div>
           </div>
 

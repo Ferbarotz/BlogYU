@@ -10,6 +10,11 @@ const Home = () => {
   const [filteredFeed, setFilteredFeed] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [postsPage, setPostsPage] = useState(1);
+  const [postsPages, setPostsPages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [postsFeed, setPostsFeed] = useState([]);
+  const [routesFeed, setRoutesFeed] = useState([]);
 
   const [globalHomeBg, setGlobalHomeBg] = useState(null);
   const [adminEditing, setAdminEditing] = useState(false);
@@ -41,33 +46,36 @@ const Home = () => {
   };
 
   useEffect(() => {
-    const fetchFeed = async (retries = 3) => {
+    const mergeFeed = (postsList, routesList) => {
+      const combined = [
+        ...postsList.map((p) => ({ ...p, type: "post" })),
+        ...routesList.map((r) => ({ ...r, type: "route" })),
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setFeed(combined);
+    };
+
+    const fetchFeed = async () => {
       try {
         const [postsRes, routesRes] = await Promise.all([
-          fetch(`${API_BASE}/api/posts`),
-          fetch(`${API_BASE}/api/routes`)
+          fetch(`${API_BASE}/api/posts?page=1&per_page=8`),
+          fetch(`${API_BASE}/api/routes?page=1&per_page=20`),
         ]);
 
-        const postsData = postsRes.ok ? await postsRes.json() : [];
-        const routesData = routesRes.ok ? await routesRes.json() : [];
+        const postsData = postsRes.ok ? await postsRes.json() : {};
+        const routesData = routesRes.ok ? await routesRes.json() : {};
 
         const postsList = Array.isArray(postsData) ? postsData : (postsData.items || postsData.posts || []);
         const routesList = Array.isArray(routesData) ? routesData : (routesData.items || routesData.routes || []);
 
-        const combined = [
-          ...postsList.map((p) => ({ ...p, type: "post" })),
-          ...routesList.map((r) => ({ ...r, type: "route" }))
-        ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-        setFeed(combined);
-        setLoading(false);
+        setPostsFeed(postsList);
+        setRoutesFeed(routesList);
+        setPostsPage(postsData.page || 1);
+        setPostsPages(postsData.pages || 1);
+        mergeFeed(postsList, routesList);
       } catch (err) {
-        if (retries > 0) {
-          setTimeout(() => fetchFeed(retries - 1), 2000);
-        } else {
-          console.error("Error fetching feed:", err);
-          setLoading(false);
-        }
+        console.error("Error fetching feed:", err);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -364,6 +372,31 @@ const Home = () => {
     if (fileInputRef.current) fileInputRef.current._selectedFile = null;
     if (urlInputRef.current) urlInputRef.current.value = "";
     setAdminEditing(false);
+  };
+
+  const handleLoadMorePosts = async () => {
+    if (loadingMore || postsPage >= postsPages) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = postsPage + 1;
+      const res = await fetch(`${API_BASE}/api/posts?page=${nextPage}&per_page=8`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const nextPosts = Array.isArray(data) ? data : (data.items || data.posts || []);
+      const updatedPosts = [...postsFeed, ...nextPosts];
+      setPostsFeed(updatedPosts);
+      setPostsPage(data.page || nextPage);
+      setPostsPages(data.pages || postsPages);
+      const combined = [
+        ...updatedPosts.map((p) => ({ ...p, type: "post" })),
+        ...routesFeed.map((r) => ({ ...r, type: "route" })),
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setFeed(combined);
+    } catch (err) {
+      console.error("Error cargando más posts", err);
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   return (
@@ -761,22 +794,15 @@ const Home = () => {
             <div className="col-12 text-center py-5">
               <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🔍</div>
               <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>
-                {searchQuery 
+                {searchQuery
                   ? `No se encontraron resultados para "${searchQuery}"`
-                  : loading ? "Cargando..." : "No hay publicaciones todavía"
-                }
+                  : loading ? "Cargando..." : "No hay publicaciones todavía"}
               </p>
               {searchQuery && (
-                <button 
+                <button
                   onClick={() => setSearchQuery("")}
                   className="btn btn-sm rounded-pill mt-3"
-                  style={{
-                    background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)",
-                    border: "none",
-                    color: "#000",
-                    padding: "8px 24px",
-                    fontWeight: "bold"
-                  }}
+                  style={{ background: "linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)", border: "none", color: "#000", padding: "8px 24px", fontWeight: "bold" }}
                 >
                   Ver todo
                 </button>
@@ -794,6 +820,19 @@ const Home = () => {
             ))
           )}
         </div>
+
+        {!searchQuery && postsPage < postsPages && (
+          <div className="text-center mt-4">
+            <button
+              className="btn"
+              onClick={handleLoadMorePosts}
+              disabled={loadingMore}
+              style={{ border: "1px solid #00f2fe", color: "#00f2fe" }}
+            >
+              {loadingMore ? "Cargando..." : "Cargar más publicaciones"}
+            </button>
+          </div>
+        )}
       </div>
 
       <style>{`

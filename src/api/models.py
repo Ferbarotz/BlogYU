@@ -2,7 +2,6 @@
 from .extensions import db
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-import bcrypt
 
 
 class User(db.Model):
@@ -19,13 +18,20 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     location = db.Column(db.String(200), nullable=True)
     role = db.Column(db.String(50), default="user")  # user | moderator | editor | admin
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # Relaciones con cascada — al borrar User se borran sus posts, rutas y favoritos
     posts = db.relationship("Post", back_populates="author", cascade="all, delete-orphan", lazy=True)
     routes = db.relationship("TravelRoute", back_populates="author", cascade="all, delete-orphan", lazy=True)
     favorites = db.relationship("Favorite", backref=db.backref("user_fav", lazy=True), cascade="all, delete-orphan", lazy="dynamic")
     likes = db.relationship("Like", backref="user", cascade="all, delete-orphan", lazy="dynamic")
-    notifications = db.relationship("Notification", backref="user", cascade="all, delete-orphan", lazy="dynamic")
+    notifications = db.relationship(
+        "Notification",
+        foreign_keys="Notification.user_id",
+        backref=db.backref("recipient", lazy=True),
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
 
     @property
     def password(self):
@@ -68,8 +74,11 @@ class Post(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     status = db.Column(db.String(20), default="published")  # draft | published
     views = db.Column(db.Integer, default=0)  # contador de vistas
+    is_hidden = db.Column(db.Boolean, default=False)
 
     images = db.relationship("PostImage", backref="post", cascade="all, delete-orphan", lazy=True)
+    likes = db.relationship("Like", backref="post", cascade="all, delete-orphan", lazy="dynamic")
+    comments = db.relationship("Comment", backref="post", cascade="all, delete-orphan", lazy="dynamic")
     # back_populates en vez de backref para evitar conflicto con User.posts
     author = db.relationship("User", back_populates="posts")
 
@@ -80,17 +89,19 @@ class Post(db.Model):
         except Exception:
             created = None
 
-
         author = None
         if self.author:
             u = self.author
             author = {
                 "id": u.id,
-                "email": getattr(u, "email", None),
-                "name": getattr(u, "name", None),
-                "is_active": getattr(u, "is_active", None),
-                "profile_pic": getattr(u, "profile_pic", None),
+                "name": u.name,
+                "is_active": u.is_active,
+                "profile_pic": u.profile_pic,
+                "role": u.role,
             }
+
+        word_count = len((self.content or "").split())
+        reading_time = max(1, round(word_count / 200))
 
         return {
             "id": self.id,
@@ -103,6 +114,11 @@ class Post(db.Model):
             "author": author,
             "images": [img.serialize() for img in self.images],
             "status": self.status,
+            "is_hidden": self.is_hidden,
+            "views": self.views or 0,
+            "reading_time_minutes": reading_time,
+            "word_count": word_count,
+            "like_count": self.likes.count() if hasattr(self, "likes") else 0,
         }
 
 
@@ -233,7 +249,7 @@ class RouteStepImage(db.Model):
 class Favorite(db.Model):
     __tablename__ = "favorites"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     item_type = db.Column(db.String(50), nullable=False)
     item_id = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -262,15 +278,22 @@ class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     type = db.Column(db.String(50), nullable=False)  # "comment", "like", "follow"
-    related_id = db.Column(db.Integer, nullable=False)  # ID del post, comentario, usuario
+    related_id = db.Column(db.Integer, nullable=False)  # compatibilidad histórica
+    post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    actor = db.relationship("User", foreign_keys=[actor_id])
 
     def serialize(self):
         return {
             "id": self.id,
             "type": self.type,
             "related_id": self.related_id,
+            "post_id": self.post_id,
+            "actor_id": self.actor_id,
+            "actor_name": self.actor.name if self.actor else None,
             "is_read": self.is_read,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
