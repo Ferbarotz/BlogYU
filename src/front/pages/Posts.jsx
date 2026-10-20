@@ -16,7 +16,8 @@ const Posts = () => {
         const res = await fetch(`${API_BASE}/api/posts?page=${page}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        setPosts(Array.isArray(data) ? data : data.posts || []);
+        const items = Array.isArray(data) ? data : (data.items || data.posts || []);
+        setPosts(items);
       } catch (error) {
         console.error("Error cargando posts:", error);
       } finally {
