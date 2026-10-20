@@ -52,7 +52,7 @@ class User(db.Model):
             "background": self.background,
             "is_admin": self.is_admin,
             "role": self.role,
-            "profile_pic": getattr(self, "profile_pic", None),
+            "profile_pic": self.profile_pic,
             "location": self.location,
         }
 
@@ -235,7 +235,7 @@ class RouteStepImage(db.Model):
 class Favorite(db.Model):
     __tablename__ = "favorites"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     item_type = db.Column(db.String(50), nullable=False)
     item_id = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

@@ -18,6 +18,7 @@ from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage,
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+from PIL import Image, UnidentifiedImageError
 
 def init_cloudinary():
     """Inicializa Cloudinary leyendo siempre de la variable de entorno más reciente."""
@@ -139,21 +140,69 @@ api = bp = Blueprint('api', __name__)
 
 # Config
 ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+ALLOWED_MIMES = {
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+}
 MAX_FILE_SIZE = 8 * 1024 * 1024  # 8 MB default
 
+MAX_NAME_LEN = 120
+MAX_EMAIL_LEN = 120
+MAX_POST_TITLE_LEN = 250
+MAX_POST_CONTENT_LEN = 50_000
+MAX_COMMENT_LEN = 2_000
+MAX_CATEGORY_LEN = 100
+MAX_ROUTE_TITLE_LEN = 200
+MAX_ROUTE_DEST_LEN = 100
+MAX_STEP_TITLE_LEN = 200
+MAX_STEP_DESC_LEN = 5_000
+MAX_STEP_LOCATION_LEN = 200
+
 # ----------------- Helpers -----------------
+def _validate_max_len(value, max_len):
+    return len((value or '').strip()) <= max_len
+
+
+def _is_valid_image_content(file_obj):
+    """Valida contenido real de imagen (magic bytes) usando Pillow."""
+    if file_obj is None:
+        return False
+
+    try:
+        stream = file_obj.stream
+        pos = stream.tell()
+        stream.seek(0)
+        with Image.open(stream) as img:
+            img.verify()
+        stream.seek(pos)
+        return True
+    except (UnidentifiedImageError, OSError, ValueError):
+        try:
+            file_obj.stream.seek(0)
+        except Exception:
+            pass
+        return False
+
+
 def allowed_file(filename, file_obj=None):
-    """Check extension or mimetype fallback."""
-    if filename and '.' in filename:
-        ext = filename.rsplit('.', 1)[1].lower().strip()
-        if ext in ALLOWED_EXT:
-            return True
-    if file_obj is not None:
-        mimetype = getattr(file_obj, 'mimetype', '') or ''
-        if mimetype.startswith('image/'):
-            return True
-    return False
+    """Lista blanca estricta por extensión + MIME + contenido real."""
+    if not filename or '.' not in filename:
+        return False
+
+    ext = filename.rsplit('.', 1)[1].lower().strip()
+    if ext not in ALLOWED_EXT:
+        return False
+
+    if file_obj is None:
+        return False
+
+    mimetype = (getattr(file_obj, 'mimetype', '') or '').lower().strip()
+    if mimetype not in ALLOWED_MIMES:
+        return False
+
+    return _is_valid_image_content(file_obj)
 
 def admin_required(fn):
     """Decorator to require is_admin on current JWT user."""
@@ -265,10 +314,10 @@ def register():
     password = body.get('password')
     if not email or not password:
         return jsonify({"msg": "Email y password requeridos"}), 400
-    if len(name or "") > 120:
-        return jsonify({"msg": "El nombre no puede superar 120 caracteres"}), 400
-    if len(email) > 120:
-        return jsonify({"msg": "El email no puede superar 120 caracteres"}), 400
+    if not _validate_max_len(name, MAX_NAME_LEN):
+        return jsonify({"msg": f"El nombre no puede superar {MAX_NAME_LEN} caracteres"}), 400
+    if not _validate_max_len(email, MAX_EMAIL_LEN):
+        return jsonify({"msg": f"El email no puede superar {MAX_EMAIL_LEN} caracteres"}), 400
     if len(password) < 8:
         return jsonify({"msg": "La contrasena debe tener minimo 8 caracteres"}), 400
     if len(password) > 128:
@@ -463,12 +512,18 @@ def create_post():
             if url:
                 saved_urls.append(url)
 
+    title = (title or "").strip()
+    content = (content or "").strip()
+    category = (category or "").strip() or None
+
     if not title or not content:
         return jsonify({"msg": "title and content required"}), 400
-    if len(title) > 250:
-        return jsonify({"msg": "El titulo no puede superar 250 caracteres"}), 400
-    if len(content) > 50000:
-        return jsonify({"msg": "El contenido no puede superar 50000 caracteres"}), 400
+    if not _validate_max_len(title, MAX_POST_TITLE_LEN):
+        return jsonify({"msg": f"El titulo no puede superar {MAX_POST_TITLE_LEN} caracteres"}), 400
+    if not _validate_max_len(content, MAX_POST_CONTENT_LEN):
+        return jsonify({"msg": f"El contenido no puede superar {MAX_POST_CONTENT_LEN} caracteres"}), 400
+    if category and not _validate_max_len(category, MAX_CATEGORY_LEN):
+        return jsonify({"msg": f"La categoría no puede superar {MAX_CATEGORY_LEN} caracteres"}), 400
 
     main_image = saved_urls[0] if saved_urls else None
 
@@ -516,7 +571,7 @@ def like_post(post_id):
         return jsonify({"msg": "Like dado", "likes_count": Post.query.get(post_id).likes.count()})
 
 @api.route('/posts/<int:post_id>/likes', methods=['GET'])
-def get_post_likes():
+def get_post_likes(post_id):
     count = Like.query.filter_by(post_id=post_id).count()
     return jsonify({"likes_count": count}), 200
 
@@ -609,6 +664,19 @@ def update_post(post_id):
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
         p.image = first_img.url if first_img else p.image
 
+    p.title = (p.title or "").strip()
+    p.content = (p.content or "").strip()
+    p.category = (p.category or "").strip() or None
+
+    if not p.title or not p.content:
+        return jsonify({"msg": "title y content son requeridos"}), 400
+    if not _validate_max_len(p.title, MAX_POST_TITLE_LEN):
+        return jsonify({"msg": f"El titulo no puede superar {MAX_POST_TITLE_LEN} caracteres"}), 400
+    if not _validate_max_len(p.content, MAX_POST_CONTENT_LEN):
+        return jsonify({"msg": f"El contenido no puede superar {MAX_POST_CONTENT_LEN} caracteres"}), 400
+    if p.category and not _validate_max_len(p.category, MAX_CATEGORY_LEN):
+        return jsonify({"msg": f"La categoría no puede superar {MAX_CATEGORY_LEN} caracteres"}), 400
+
     db.session.commit()
     return jsonify(p.serialize()), 200
 
@@ -697,8 +765,8 @@ def add_comment(post_id):
     content = (body.get("content") or "").strip()
     if not content:
         return jsonify({"msg": "El comentario no puede estar vacio"}), 400
-    if len(content) > 2000:
-        return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
+    if not _validate_max_len(content, MAX_COMMENT_LEN):
+        return jsonify({"msg": f"El comentario no puede superar {MAX_COMMENT_LEN} caracteres"}), 400
     new_comment = Comment(
         content=content,
         author_name=author_name,
@@ -739,8 +807,8 @@ def edit_comment(post_id, comment_id):
     new_content = (body.get("content") or "").strip()
     if not new_content:
         return jsonify({"msg": "El comentario no puede estar vacío"}), 400
-    if len(new_content) > 2000:
-        return jsonify({"msg": "El comentario no puede superar 2000 caracteres"}), 400
+    if not _validate_max_len(new_content, MAX_COMMENT_LEN):
+        return jsonify({"msg": f"El comentario no puede superar {MAX_COMMENT_LEN} caracteres"}), 400
     comment.content = new_content
     db.session.commit()
     return jsonify(comment.serialize()), 200
@@ -924,9 +992,23 @@ def update_user(user_id):
                     setattr(user, 'meta', existing)
 
         if 'name' in data and hasattr(user, 'name'):
-            user.name = data.get('name')
+            new_name = (data.get('name') or '').strip()
+            if not new_name:
+                return jsonify({'msg': 'El nombre no puede estar vacío'}), 400
+            if not _validate_max_len(new_name, MAX_NAME_LEN):
+                return jsonify({'msg': f'El nombre no puede superar {MAX_NAME_LEN} caracteres'}), 400
+            user.name = new_name
+
         if 'email' in data and hasattr(user, 'email'):
-            user.email = data.get('email')
+            new_email = (data.get('email') or '').strip().lower()
+            if not new_email:
+                return jsonify({'msg': 'El email no puede estar vacío'}), 400
+            if not _validate_max_len(new_email, MAX_EMAIL_LEN):
+                return jsonify({'msg': f'El email no puede superar {MAX_EMAIL_LEN} caracteres'}), 400
+            existing = User.query.filter(User.email == new_email, User.id != user.id).first()
+            if existing:
+                return jsonify({'msg': 'Ese email ya está en uso'}), 400
+            user.email = new_email
 
         db.session.commit()
 
@@ -960,6 +1042,10 @@ def create_route():
 
     if not title or not destination:
         return jsonify({"msg": "title y destination son requeridos"}), 400
+    if not _validate_max_len(title, MAX_ROUTE_TITLE_LEN):
+        return jsonify({"msg": f"El título no puede superar {MAX_ROUTE_TITLE_LEN} caracteres"}), 400
+    if not _validate_max_len(destination, MAX_ROUTE_DEST_LEN):
+        return jsonify({"msg": f"El destino no puede superar {MAX_ROUTE_DEST_LEN} caracteres"}), 400
     if not isinstance(steps, list):
         return jsonify({"msg": "steps debe ser una lista"}), 400
 
@@ -987,6 +1073,12 @@ def create_route():
             return jsonify({"msg": f"El step #{i} tiene type inválido"}), 400
         if not step_title:
             return jsonify({"msg": f"El step #{i} requiere title"}), 400
+        if not _validate_max_len(step_title, MAX_STEP_TITLE_LEN):
+            return jsonify({"msg": f"El título del step #{i} no puede superar {MAX_STEP_TITLE_LEN} caracteres"}), 400
+        if step_desc and not _validate_max_len(step_desc, MAX_STEP_DESC_LEN):
+            return jsonify({"msg": f"La descripción del step #{i} no puede superar {MAX_STEP_DESC_LEN} caracteres"}), 400
+        if step_location and not _validate_max_len(step_location, MAX_STEP_LOCATION_LEN):
+            return jsonify({"msg": f"La ubicación del step #{i} no puede superar {MAX_STEP_LOCATION_LEN} caracteres"}), 400
 
         try:
             step_rating = int(step_rating)
@@ -1053,6 +1145,13 @@ def update_route(route_id):
     route.start_date = body.get("start_date", route.start_date)
     route.budget = body.get("budget", route.budget)
 
+    if not route.title or not route.destination:
+        return jsonify({"msg": "title y destination son requeridos"}), 400
+    if not _validate_max_len(route.title, MAX_ROUTE_TITLE_LEN):
+        return jsonify({"msg": f"El título no puede superar {MAX_ROUTE_TITLE_LEN} caracteres"}), 400
+    if not _validate_max_len(route.destination, MAX_ROUTE_DEST_LEN):
+        return jsonify({"msg": f"El destino no puede superar {MAX_ROUTE_DEST_LEN} caracteres"}), 400
+
     new_steps = body.get("steps")
     if new_steps is not None:
         allowed_types = {"vuelo","aeropuerto","vip","hotel","restaurante","cafe","lugar","transporte","otro"}
@@ -1070,6 +1169,15 @@ def update_route(route_id):
                 return jsonify({"msg": f"Step #{i} tiene type inválido"}), 400
             if not step_title:
                 return jsonify({"msg": f"Step #{i} requiere title"}), 400
+            if not _validate_max_len(step_title, MAX_STEP_TITLE_LEN):
+                return jsonify({"msg": f"El título del step #{i} no puede superar {MAX_STEP_TITLE_LEN} caracteres"}), 400
+
+            step_desc = s.get("description")
+            step_location = s.get("location")
+            if step_desc and not _validate_max_len(step_desc, MAX_STEP_DESC_LEN):
+                return jsonify({"msg": f"La descripción del step #{i} no puede superar {MAX_STEP_DESC_LEN} caracteres"}), 400
+            if step_location and not _validate_max_len(step_location, MAX_STEP_LOCATION_LEN):
+                return jsonify({"msg": f"La ubicación del step #{i} no puede superar {MAX_STEP_LOCATION_LEN} caracteres"}), 400
 
             try:
                 rating = max(1, min(5, int(s.get("rating", 5))))
@@ -1079,9 +1187,9 @@ def update_route(route_id):
             step = RouteStep(
                 type=step_type,
                 title=step_title,
-                description=s.get("description"),
+                description=step_desc,
                 rating=rating,
-                location=s.get("location"),
+                location=step_location,
                 route_id=route.id
             )
             db.session.add(step)
