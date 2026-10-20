@@ -30,14 +30,8 @@ def create_app():
     limiter.init_app(app)
 
     # JWT Blocklist: invalida tokens en logout
+    # La tabla token_blocklist se gestiona por migraciones (flask db upgrade).
     from .models import TokenBlocklist
-
-    # Crea SOLO la tabla token_blocklist si no existe (aditivo, no toca datos).
-    with app.app_context():
-        try:
-            TokenBlocklist.__table__.create(bind=db.engine, checkfirst=True)
-        except Exception:
-            app.logger.exception("No se pudo asegurar la tabla token_blocklist")
 
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
@@ -51,10 +45,16 @@ def create_app():
             app.logger.exception("Error consultando token_blocklist")
             return False
 
-    # CORS: nunca "*" en producción
+    # CORS: no permitir wildcard. Siempre lista blanca explícita.
     _cors_env = os.environ.get("CORS_ORIGINS")
     if _cors_env:
-        cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+        parsed = [o.strip() for o in _cors_env.split(",") if o.strip()]
+        cors_origins = [o for o in parsed if o != "*"]
+        if not cors_origins:
+            raise ValueError(
+                "CORS_ORIGINS no puede ser '*' ni quedar vacío. "
+                "Define al menos un origen explícito."
+            )
     else:
         frontend = app.config.get("FRONTEND_URL", "")
         cors_origins = [frontend] if frontend else ["http://localhost:3000"]
@@ -70,20 +70,7 @@ def create_app():
 
     app.register_blueprint(api, url_prefix="/api")
 
-    # ¡Ojo! Las migraciones Alembic (flask db upgrade) son la única fuente de verdad
-    # en producción. db.create_all() solo se permite explícitamente en desarrollo
-    # con AUTO_CREATE_DB=true para iterar rápido sin tener que hacer migrate cada cambio.
-    # En producción este bloque se omite intencionadamente.
-    if app.config.get("AUTO_CREATE_DB"):
-        with app.app_context():
-            try:
-                db.create_all()
-                app.logger.warning(
-                    "AUTO_CREATE_DB activado: db.create_all() ejecutado. "
-                    "En producción usa siempre 'flask db upgrade' después de cambiar modelos."
-                )
-            except Exception:
-                app.logger.exception("Error en db.create_all()")
+    # Esquema de BD: siempre por migraciones Alembic (flask db upgrade).
 
     @app.cli.command("create-admin")
     @click.option("--email", prompt=True, help="Email del administrador")
