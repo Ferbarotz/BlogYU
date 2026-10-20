@@ -77,8 +77,25 @@ def create_app():
     @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Contraseña del administrador")
     @click.option("--name", default="Admin", prompt=False, help="Nombre del administrador")
     def create_admin(email, password, name):
-        if User.query.filter_by(email=email).first():
-            click.echo(f"Ya existe un usuario con email {email}")
+        from sqlalchemy.engine.url import make_url
+
+        email = email.strip().lower()
+        url = make_url(app.config["SQLALCHEMY_DATABASE_URI"])
+        destino = f"{url.drivername}://{url.host or ''}/{url.database or ''}"
+        click.echo(f"Base de datos: {destino}")
+        if url.drivername.startswith("sqlite"):
+            click.echo("AVISO: es una SQLite local, NO la base de datos de Render. "
+                       "Exporta DATABASE_URL con la External Database URL para crear el admin en Render.")
+
+        user = User.query.filter(db.func.lower(User.email) == email).first()
+        if user:
+            # Si ya existe: se promociona a admin y se actualiza su contraseña.
+            user.is_admin = True
+            user.role = "admin"
+            user.is_active = True
+            user.password = password
+            db.session.commit()
+            click.echo(f"Usuario existente promocionado a administrador: {email}")
             return
 
         admin = User(
@@ -86,6 +103,7 @@ def create_app():
             email=email,
             password=password,
             is_admin=True,
+            role="admin",
             is_active=True
         )
         db.session.add(admin)
