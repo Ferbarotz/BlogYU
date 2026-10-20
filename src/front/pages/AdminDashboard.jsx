@@ -172,16 +172,21 @@ useEffect(() => {
         fetch(`${API_BASE}/api/posts`, { headers: authHeaders() }),
         fetch(`${API_BASE}/api/routes`, { headers: authHeaders() }),
       ]);
-      const usersList = usersRes.ok ? await usersRes.json() : [];
-      const postsList = postsRes.ok ? await postsRes.json() : [];
-      const routesList = routesRes.ok ? await routesRes.json() : [];
-      setUsers(Array.isArray(usersList) ? usersList : []);
-      setPosts(Array.isArray(postsList) ? postsList : []);
-      setRoutes(Array.isArray(routesList) ? routesList : []);
+      const usersData = usersRes.ok ? await usersRes.json() : [];
+      const postsData = postsRes.ok ? await postsRes.json() : [];
+      const routesData = routesRes.ok ? await routesRes.json() : [];
+
+      const usersList = Array.isArray(usersData) ? usersData : (usersData.items || usersData.users || []);
+      const postsList = Array.isArray(postsData) ? postsData : (postsData.items || postsData.posts || []);
+      const routesList = Array.isArray(routesData) ? routesData : (routesData.items || routesData.routes || []);
+
+      setUsers(usersList);
+      setPosts(postsList);
+      setRoutes(routesList);
       setStats({
-        users: Array.isArray(usersList) ? usersList.length : 0,
-        posts: Array.isArray(postsList) ? postsList.length : 0,
-        routes: Array.isArray(routesList) ? routesList.length : 0,
+        users: usersList.length,
+        posts: postsList.length,
+        routes: routesList.length,
       });
     } catch (err) {
       console.error("Error cargando datos admin:", err);

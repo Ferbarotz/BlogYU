@@ -46,12 +46,12 @@ const MyPosts = () => {
           if (!alt.ok) throw new Error("No se pudo cargar posts");
           const altData = await alt.json();
           if (!mounted) return;
-          const postsArray = Array.isArray(altData) ? altData : altData.posts || [];
+          const postsArray = Array.isArray(altData) ? altData : (altData.items || altData.posts || []);
           setPosts(postsArray.map(normalizePostImages));
         } else {
           const data = await res.json();
           if (!mounted) return;
-          const postsArray = Array.isArray(data) ? data : data.posts || [];
+          const postsArray = Array.isArray(data) ? data : (data.items || data.posts || []);
           setPosts(postsArray.map(normalizePostImages));
         }
       } catch (err) {
