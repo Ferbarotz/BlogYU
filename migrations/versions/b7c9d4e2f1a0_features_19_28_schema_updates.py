@@ -35,8 +35,8 @@ def upgrade():
         if not _has_column(inspector, 'user', 'created_at'):
             op.add_column('user', sa.Column('created_at', sa.DateTime(), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')))
 
-        op.execute("UPDATE user SET role='admin' WHERE is_admin = 1")
-        op.execute("UPDATE user SET role='user' WHERE role IS NULL OR role = ''")
+        op.execute(sa.text('UPDATE "user" SET role = :admin_role WHERE is_admin IS TRUE').bindparams(admin_role='admin'))
+        op.execute(sa.text('UPDATE "user" SET role = :user_role WHERE role IS NULL OR role = :empty').bindparams(user_role='user', empty=''))
 
     # post
     if _has_table(inspector, 'post'):
@@ -47,9 +47,9 @@ def upgrade():
         if not _has_column(inspector, 'post', 'is_hidden'):
             op.add_column('post', sa.Column('is_hidden', sa.Boolean(), nullable=True, server_default=sa.false()))
 
-        op.execute("UPDATE post SET status='published' WHERE status IS NULL OR status = ''")
-        op.execute("UPDATE post SET views=0 WHERE views IS NULL")
-        op.execute("UPDATE post SET is_hidden=0 WHERE is_hidden IS NULL")
+        op.execute(sa.text("UPDATE post SET status = 'published' WHERE status IS NULL OR status = ''"))
+        op.execute(sa.text("UPDATE post SET views = 0 WHERE views IS NULL"))
+        op.execute(sa.text("UPDATE post SET is_hidden = FALSE WHERE is_hidden IS NULL"))
 
     # likes table
     if not _has_table(inspector, 'likes'):

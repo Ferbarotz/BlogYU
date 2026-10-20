@@ -16,14 +16,22 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        'token_blocklist',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('jti', sa.String(length=36), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_token_blocklist_jti', 'token_blocklist', ['jti'], unique=True)
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    if 'token_blocklist' not in inspector.get_table_names():
+        op.create_table(
+            'token_blocklist',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('jti', sa.String(length=36), nullable=False),
+            sa.Column('created_at', sa.DateTime(), nullable=True),
+            sa.PrimaryKeyConstraint('id'),
+        )
+
+    inspector = sa.inspect(bind)
+    existing_indexes = {idx.get('name') for idx in inspector.get_indexes('token_blocklist')}
+    if 'ix_token_blocklist_jti' not in existing_indexes:
+        op.create_index('ix_token_blocklist_jti', 'token_blocklist', ['jti'], unique=True)
 
 
 def downgrade():
