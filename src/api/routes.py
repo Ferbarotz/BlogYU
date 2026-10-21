@@ -325,6 +325,11 @@ def register():
     if User.query.filter_by(email=email).first():
         return jsonify({"msg": "El usuario ya existe"}), 400
 
+    import re
+    # despues de: if user.query.filter_by(email=email).first():
+    if not re.match(r"[^@]+@[^@]+\.[^@]+",email):
+        return jsonify({"msg": "Formato de email invalido"}),400    
+
     new_user = User(name=name, email=email)
     new_user.password = password
     db.session.add(new_user)
