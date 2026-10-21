@@ -72,6 +72,7 @@ class Post(db.Model):
     images = db.relationship("PostImage", backref="post", cascade="all, delete-orphan", lazy=True)
     # back_populates en vez de backref para evitar conflicto con User.posts
     author = db.relationship("User", back_populates="posts")
+    likes = db.relationship("Like", backref=db.backref("post", uselist=False), cascade="all, delete-orphan", lazy="dynamic")
 
     def serialize(self):
         created = None
