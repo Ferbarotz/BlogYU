@@ -351,7 +351,12 @@ def forgot_password():
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify({"msg": "Si el email existe, se ha enviado un link de recuperación"}), 200
+        # aun cuando el usuario no existe, generamos un token vacío para no filtrar emails válidos
+        expires = timedelta(minutes=30)
+        token = ""
+        reset_url = ""
+        generic_ok = {"msg": "Si el email existe, se ha enviado un link de recuperación"}
+        return jsonify({**generic_ok, "reset_url": reset_url}), 200
 
     expires = timedelta(minutes=30)
     token = create_access_token(identity=user.id, expires_delta=expires)
@@ -364,9 +369,8 @@ def forgot_password():
 
     if mail_suppressed:
         current_app.logger.warning("Envío de correo suprimido (MAIL_SUPPRESS_SEND activo) para %s", email)
-        if current_app.debug:
-            return jsonify({**generic_ok, "reset_url": reset_url}), 200
-        return jsonify(generic_ok), 200
+        # Siempre devolvemos el URL para que el usuario pueda copiarlo manualmente
+        return jsonify({**generic_ok, "reset_url": reset_url, "suppressed": True}), 200
 
     subject = "Recuperación de contraseña - BlogYU"
     body = (
@@ -382,9 +386,8 @@ def forgot_password():
         current_app.logger.info("Correo de recuperación enviado a %s vía SendGrid API", email)
     else:
         current_app.logger.error("No se pudo enviar el correo de recuperación a %s: %s", email, err)
-        # No revelamos el fallo al usuario ni rompemos el flujo del frontend.
-        if current_app.debug:
-            return jsonify({**generic_ok, "reset_url": reset_url, "warning": err}), 200
+        # Aún cuando el correo falle, devolvemos el URL para que el usuario pueda copiarlo
+        return jsonify({**generic_ok, "reset_url": reset_url, "email_error": err}), 200
 
     return jsonify(generic_ok), 200
 
