@@ -187,7 +187,7 @@ const Register = () => {
                   <input
                     name="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     onChange={handleChange}
                     value={formData.password}
                     required
