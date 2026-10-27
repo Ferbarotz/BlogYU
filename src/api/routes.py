@@ -346,31 +346,19 @@ def register():
 def forgot_password():
     email = (request.get_json(silent=True) or {}).get('email') or request.form.get('email')
     email = (email or '').strip().lower()
+    generic_ok = {"msg": "Si el email existe, se ha enviado un link de recuperación"}
     if not email:
         return jsonify({"msg": "Email requerido"}), 400
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        # aun cuando el usuario no existe, generamos un token vacío para no filtrar emails válidos
-        expires = timedelta(minutes=30)
-        token = ""
-        reset_url = ""
-        generic_ok = {"msg": "Si el email existe, se ha enviado un link de recuperación"}
-        return jsonify({**generic_ok, "reset_url": reset_url}), 200
+        # Respuesta idéntica al caso existente: no revela si el email está registrado
+        return jsonify(generic_ok), 200
 
     expires = timedelta(minutes=30)
     token = create_access_token(identity=user.id, expires_delta=expires)
-
     FRONTEND_URL = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
     reset_url = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
-
-    mail_suppressed = bool(current_app.config.get('MAIL_SUPPRESS_SEND'))
-    generic_ok = {"msg": "Si el email existe, se ha enviado un link de recuperación"}
-
-    if mail_suppressed:
-        current_app.logger.warning("Envío de correo suprimido (MAIL_SUPPRESS_SEND activo) para %s", email)
-        # Siempre devolvemos el URL para que el usuario pueda copiarlo manualmente
-        return jsonify({**generic_ok, "reset_url": reset_url, "suppressed": True}), 200
 
     subject = "Recuperación de contraseña - BlogYU"
     body = (
@@ -379,16 +367,18 @@ def forgot_password():
         "Este enlace expirará en 30 minutos."
     )
 
-    # Enviamos por la Web API de SendGrid (HTTPS). Render bloquea SMTP saliente.
-    ok, err = send_email_via_sendgrid_api(email, subject, body)
+    if current_app.config.get('MAIL_SUPPRESS_SEND'):
+        # Solo desarrollo: el link va al log del servidor, nunca al cliente
+        current_app.logger.warning("MAIL_SUPPRESS_SEND activo; reset_url para %s: %s", email, reset_url)
+        return jsonify(generic_ok), 200
 
+    ok, err = send_email_via_sendgrid_api(email, subject, body)
     if ok:
         current_app.logger.info("Correo de recuperación enviado a %s vía SendGrid API", email)
     else:
         current_app.logger.error("No se pudo enviar el correo de recuperación a %s: %s", email, err)
-        # Aún cuando el correo falle, devolvemos el URL para que el usuario pueda copiarlo
-        return jsonify({**generic_ok, "reset_url": reset_url, "email_error": err}), 200
 
+    # Respuesta idéntica aunque el envío falle; el error solo queda en logs
     return jsonify(generic_ok), 200
 
 @api.route('/reset-password', methods=['POST'])
@@ -1480,29 +1470,3 @@ def list_uploads():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@api.route('/secret-setup-admin-xyz123', methods=['GET'])
-def setup_admin():
-    from src.api.extensions import db
-    from src.api.models import User
-
-    try:
-        target_email = 'ferbarotz@gmail.com'
-        user = User.query.filter_by(email=target_email).first()
-
-        if user:
-            user.is_admin = True
-            db.session.commit()
-            return jsonify({"ok": True, "msg": f"Admin activado para {user.email}"}), 200
-        else:
-            user = User(
-                name='Fernando Barrera',
-                email=target_email,
-                is_admin=True
-            )
-            user.password = 'Admin@Fer@Bar@Ort@'
-            db.session.add(user)
-            db.session.commit()
-            return jsonify({"ok": True, "msg": f"Admin creado para {user.email}"}), 200
-
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
