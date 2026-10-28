@@ -1328,6 +1328,10 @@ def admin_get_all_posts():
 @admin_required
 def admin_delete_post(post_id):
     p = Post.query.get_or_404(post_id)
+    # Limpieza previa (misma que delete_post): Comment no tiene cascade y
+    # dejar comentarios genera ForeignKeyViolation -> 500
+    Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
+    PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
     db.session.delete(p)
     db.session.commit()
     return jsonify({"msg": "Post eliminado por admin"}), 200
@@ -1384,6 +1388,14 @@ def get_all_users():
 @admin_required
 def admin_delete_user(user_id):
     user = User.query.get_or_404(user_id)
+    # 1) Comentarios de cualquier autor en los posts del usuario
+    post_ids = [pid for (pid,) in db.session.query(Post.id).filter_by(user_id=user_id).all()]
+    if post_ids:
+        Comment.query.filter(Comment.post_id.in_(post_ids)).delete(synchronize_session=False)
+    # 2) Comentarios del usuario en posts ajenos (FK comment.user_id)
+    Comment.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    # 3) Likes dados por el usuario (los recibidos por sus posts se van por cascade)
+    Like.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     db.session.delete(user)
     db.session.commit()
     return jsonify({"msg": "Usuario eliminado"}), 200
