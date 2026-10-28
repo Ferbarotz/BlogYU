@@ -162,6 +162,45 @@ MAX_STEP_DESC_LEN = 5_000
 MAX_STEP_LOCATION_LEN = 200
 
 # ----------------- Helpers -----------------
+def _cloudinary_public_id(url):
+    """Extrae el public_id real de una URL de Cloudinary.
+
+    https://res.cloudinary.com/<cloud>/image/upload/v123/folder/name.jpg
+      -> "folder/name"
+    """
+    if not url or "cloudinary.com" not in url or "/upload/" not in url:
+        return None
+    tail = url.split("/upload/", 1)[1].split("?")[0]
+    parts = [seg for seg in tail.split("/") if seg]
+    if parts and re.match(r"^v\d+$", parts[0]):
+        parts = parts[1:]  # quitar la version (v123...)
+    if not parts:
+        return None
+    stem, ext = os.path.splitext(parts[-1])
+    if ext:
+        parts[-1] = stem
+    return "/".join(parts)
+
+
+def _destroy_cloudinary_image(url):
+    """Borra una imagen de Cloudinary usando su public_id real."""
+    public_id = _cloudinary_public_id(url)
+    if not public_id:
+        return False
+    try:
+        init_cloudinary()
+        result = cloudinary.uploader.destroy(public_id, invalidate=True)
+        ok = isinstance(result, dict) and result.get("result") in ("ok", "not found")
+        if not ok:
+            current_app.logger.warning(
+                "Cloudinary destroy respuesta inesperada para %s: %s", public_id, result
+            )
+        return ok
+    except Exception:
+        current_app.logger.exception("Error eliminando imagen de Cloudinary: %s", url)
+        return False
+
+
 def _validate_max_len(value, max_len):
     return len((value or '').strip()) <= max_len
 
@@ -611,7 +650,7 @@ def update_post(post_id):
                 # Eliminar de Cloudinary si es URL de Cloudinary
                 if img.url and "/res.cloudinary.com" in img.url:
                     try:
-                        cloudinary.uploader.destroy(img.url.split("/upload/")[0].split("//")[1])
+                        _destroy_cloudinary_image(img.url)
                     except Exception:
                         current_app.logger.exception("Error eliminando imagen antigua de Cloudinary")
                 try:
@@ -697,6 +736,9 @@ def delete_post(post_id):
                 os.remove(old_path)
         except Exception:
             current_app.logger.exception("Error eliminando archivo imagen")
+    # Borrar tambien las imagenes de Cloudinary (public_id real)
+    for img in list(p.images):
+        _destroy_cloudinary_image(img.url)
     PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
 
     # 3. Borrar imagen principal si es local
@@ -710,7 +752,7 @@ def delete_post(post_id):
     # También eliminar de Cloudinary si es una URL de Cloudinary
     if p.image and "/res.cloudinary.com" in p.image:
         try:
-            cloudinary.uploader.destroy(p.image.split("/upload/")[0].split("//")[1])
+            _destroy_cloudinary_image(p.image)
         except Exception:
             current_app.logger.exception("Error eliminando imagen de Cloudinary")
 
@@ -1328,9 +1370,14 @@ def admin_get_all_posts():
 @admin_required
 def admin_delete_post(post_id):
     p = Post.query.get_or_404(post_id)
+    if p.image:
+        _destroy_cloudinary_image(p.image)
     # Limpieza previa (misma que delete_post): Comment no tiene cascade y
     # dejar comentarios genera ForeignKeyViolation -> 500
     Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
+    # Borrar tambien las imagenes de Cloudinary (public_id real)
+    for img in list(p.images):
+        _destroy_cloudinary_image(img.url)
     PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
     db.session.delete(p)
     db.session.commit()
