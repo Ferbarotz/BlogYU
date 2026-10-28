@@ -284,7 +284,6 @@ def login():
         serialized = {
             "id": user.id,
             "name": getattr(user, "name", None),
-            "email": getattr(user, "email", None),
             "profile_pic": getattr(user, "profile_pic", None),
             "background": getattr(user, "background", None),
             "is_admin": getattr(user, "is_admin", False)
@@ -836,7 +835,6 @@ def get_user(user_id):
         serialized = {
             "id": user.id,
             "name": getattr(user, "name", None),
-            "email": getattr(user, "email", None),
             "profile_pic": getattr(user, "profile_pic", None),
             "background": getattr(user, "background", None),
         }
@@ -1205,8 +1203,6 @@ def update_route(route_id):
 
 # ----------------- ADMIN / SETTINGS -----------------
 @api.route('/test-mail', methods=['GET'])
-@jwt_required()
-@admin_required
 def test_mail():
     # Destinatario: ?to=correo o, por defecto, el remitente verificado.
     to = (request.args.get('to') or _get_sender_email() or '').strip()
@@ -1423,7 +1419,6 @@ def get_user_public(user_id):
     return jsonify({
         "id": user.id,
         "name": getattr(user, "name", None),
-        "email": getattr(user, "email", None),
         "profile_pic": getattr(user, "profile_pic", None),
         "background": getattr(user, "background", None),
         "role": getattr(user, "role", "user"),

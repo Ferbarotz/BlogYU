@@ -89,7 +89,6 @@ class Post(db.Model):
             u = self.author
             author = {
                 "id": u.id,
-                "email": getattr(u, "email", None),
                 "name": getattr(u, "name", None),
                 "is_active": getattr(u, "is_active", None),
                 "profile_pic": getattr(u, "profile_pic", None),
@@ -170,7 +169,6 @@ class TravelRoute(db.Model):
             author = {
                 "id": self.author.id,
                 "name": self.author.name,
-                "email": self.author.email,
                 "profile_pic": getattr(self.author, "profile_pic", None),
             }
         return {
