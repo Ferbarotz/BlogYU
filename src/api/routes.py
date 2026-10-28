@@ -520,7 +520,23 @@ def get_user_posts():
 @api.route('/posts/<int:post_id>', methods=['GET'])
 def get_post(post_id):
     post = Post.query.get_or_404(post_id)
-    return jsonify(post.serialize()), 200
+
+    # Contador de vistas: +1 por visitante unico por hora (guardia anti-F5 via cookie)
+    is_new_view = request.cookies.get(f"viewed_{post_id}") is None
+    if is_new_view:
+        try:
+            db.session.query(Post).filter_by(id=post_id).update(
+                {"views": Post.views + 1}, synchronize_session=False
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("No se pudo incrementar el contador de vistas")
+
+    resp = jsonify(post.serialize())
+    if is_new_view:
+        resp.set_cookie(f"viewed_{post_id}", "1", max_age=3600, httponly=True, samesite="Lax")
+    return resp, 200
 
 @api.route('/posts', methods=['POST'])
 @jwt_required()
