@@ -13,6 +13,7 @@ from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_ident
 
 from .extensions import db, bcrypt, limiter
 from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage, TokenBlocklist, Like
+from .models import Notification
 
 # Cloudinary
 import cloudinary
@@ -780,13 +781,13 @@ def add_comment(post_id):
         recent = Notification.query.filter_by(
             user_id=post.user_id,
             type="comment",
-            related_id=comment.id
+            related_id=new_comment.id
         ).first()
         if not recent:
             notif = Notification(
                 user_id=post.user_id,
                 type="comment",
-                related_id=comment.id
+                related_id=new_comment.id
             )
             db.session.add(notif)
             db.session.commit()
