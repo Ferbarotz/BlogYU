@@ -1205,6 +1205,8 @@ def update_route(route_id):
 
 # ----------------- ADMIN / SETTINGS -----------------
 @api.route('/test-mail', methods=['GET'])
+@jwt_required()
+@admin_required
 def test_mail():
     # Destinatario: ?to=correo o, por defecto, el remitente verificado.
     to = (request.args.get('to') or _get_sender_email() or '').strip()
