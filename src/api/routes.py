@@ -315,7 +315,7 @@ def login():
         token = create_access_token(identity=str(user.id))
     except Exception as e:
         current_app.logger.exception("Error generando token")
-        return jsonify({"msg": "error_generando_token", "detail": str(e)}), 500
+        return jsonify({"msg": "error_generando_token"}), 500
 
     try:
         serialized = user.serialize()
@@ -364,8 +364,6 @@ def register():
     if User.query.filter_by(email=email).first():
         return jsonify({"msg": "El usuario ya existe"}), 400
 
-    import re
-    # despues de: if user.query.filter_by(email=email).first():
     if not re.match(r"[^@]+@[^@]+\.[^@]+",email):
         return jsonify({"msg": "Formato de email invalido"}),400    
 
@@ -625,6 +623,8 @@ def post_stats(post_id):
 @jwt_required()
 def like_post(post_id):
     user_id = int(get_jwt_identity())
+    if not Post.query.get(post_id):
+        return jsonify({"msg": "Post no encontrado"}), 404
     # Si ya dio like, lo quita (unlike); si no, lo agrega
     existing = Like.query.filter_by(user_id=user_id, post_id=post_id).first()
     if existing:
@@ -656,17 +656,6 @@ def update_post(post_id):
         p.content = data.get("content", p.content)
         p.category = data.get("category", p.category)
 
-        keep_ids = data.get("keep_image_ids", [])
-        if keep_ids is not None:
-            for img in list(p.images):
-                if img.id not in keep_ids:
-                    try:
-                        old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
-                        if os.path.exists(old_path):
-                            os.remove(old_path)
-                    except Exception:
-                        pass
-                    db.session.delete(img)
 
         new_image_urls = data.get("new_images", [])
         current_count = PostImage.query.filter_by(post_id=p.id).count()
