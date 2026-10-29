@@ -395,7 +395,12 @@ def forgot_password():
         return jsonify(generic_ok), 200
 
     expires = timedelta(minutes=30)
-    token = create_access_token(identity=user.id, expires_delta=expires)
+    # Token de proposito especifico: solo vale para reset, no para sesion
+    token = create_access_token(
+        identity=user.id,
+        expires_delta=expires,
+        additional_claims={"purpose": "reset"}
+    )
     FRONTEND_URL = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
     reset_url = f"{FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
 
@@ -430,6 +435,13 @@ def reset_password(token=None):
 
     try:
         data = decode_token(token)
+        # Rechazar tokens de sesion: solo valen los creados para reset
+        if data.get("purpose") != "reset":
+            return jsonify({"msg": "Token invalido o expirado"}), 400
+        # Un solo uso: si el jti ya fue consumido esta en la blocklist
+        jti = data.get("jti")
+        if not jti or TokenBlocklist.query.filter_by(jti=jti).first():
+            return jsonify({"msg": "Token invalido o expirado"}), 400
         raw_user_id = data.get('sub') or data.get('identity')
         user_id = int(raw_user_id)
     except Exception as e:
@@ -445,8 +457,14 @@ def reset_password(token=None):
     if not new_password:
         return jsonify({"msg": "Nueva contraseña requerida"}), 400
 
+    if len(new_password) < 8:
+        return jsonify({"msg": "La contrasena debe tener minimo 8 caracteres"}), 400
+    if len(new_password) > 128:
+        return jsonify({"msg": "La contrasena no puede superar 128 caracteres"}), 400
     try:
         user.password = new_password
+        # Consumir el token: bloquear su jti para que no se reutilice
+        db.session.add(TokenBlocklist(jti=jti))
         db.session.commit()
     except Exception:
         current_app.logger.exception("Error actualizando contraseña")
