@@ -1536,6 +1536,8 @@ def clear_read_notifications():
 @admin_required
 def list_uploads():
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
+    if not os.path.isdir(uploads_dir):
+        return jsonify({"files": []}), 200
     try:
         files = os.listdir(uploads_dir)
         image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif'))]
