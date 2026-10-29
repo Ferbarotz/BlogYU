@@ -10,6 +10,7 @@ from functools import wraps
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
+from sqlalchemy.orm import joinedload, selectinload
 
 from .extensions import db, bcrypt, limiter
 from sqlalchemy.exc import IntegrityError
@@ -526,7 +527,10 @@ def get_posts():
     if category:
         query = query.filter(Post.category == category)
 
-    posts = query.order_by(Post.created_at.desc()).paginate(
+    posts = query.options(
+        joinedload(Post.author),
+        selectinload(Post.images),
+    ).order_by(Post.created_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
     )
     return jsonify({
@@ -541,7 +545,10 @@ def get_posts():
 @jwt_required()
 def get_user_posts():
     user_id = get_jwt_identity()
-    posts = Post.query.filter_by(user_id=int(user_id)).order_by(Post.created_at.desc()).all()
+    posts = Post.query.options(
+        joinedload(Post.author),
+        selectinload(Post.images),
+    ).filter_by(user_id=int(user_id)).order_by(Post.created_at.desc()).all()
     return jsonify([p.serialize() for p in posts]), 200
 
 @api.route('/posts/<int:post_id>', methods=['GET'])
@@ -1187,8 +1194,28 @@ def create_route():
 
 @api.route('/routes', methods=['GET'])
 def get_routes():
-    routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).all()
-    return jsonify([r.serialize() for r in routes]), 200
+    query = TravelRoute.query.options(
+        joinedload(TravelRoute.author),
+        selectinload(TravelRoute.steps).selectinload(RouteStep.images),
+    ).order_by(TravelRoute.created_at.desc())
+
+    # Mantener la respuesta antigua (lista) si el cliente no pide paginación.
+    if request.args.get("page") is None and request.args.get("per_page") is None:
+        routes = query.all()
+        return jsonify([route.serialize() for route in routes]), 200
+
+    page = max(1, request.args.get("page", 1, type=int) or 1)
+    per_page = request.args.get("per_page", 10, type=int) or 10
+    per_page = min(100, max(1, per_page))
+    routes = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    return jsonify({
+        "items": [route.serialize() for route in routes.items],
+        "total": routes.total,
+        "page": routes.page,
+        "pages": routes.pages,
+        "per_page": routes.per_page,
+    }), 200
 
 @api.route('/routes/<int:route_id>', methods=['GET'])
 def get_route(route_id):
@@ -1210,7 +1237,10 @@ def delete_route(route_id):
 @jwt_required()
 def get_my_routes():
     user_id = int(get_jwt_identity())
-    routes = TravelRoute.query.filter_by(user_id=user_id).order_by(TravelRoute.created_at.desc()).all()
+    routes = TravelRoute.query.options(
+        joinedload(TravelRoute.author),
+        selectinload(TravelRoute.steps).selectinload(RouteStep.images),
+    ).filter_by(user_id=user_id).order_by(TravelRoute.created_at.desc()).all()
     return jsonify([r.serialize() for r in routes]), 200
 
 @api.route('/routes/<int:route_id>', methods=['PUT'])
@@ -1398,7 +1428,10 @@ def admin_get_all_posts():
     query = Post.query
     if status in ('published', 'draft'):
         query = query.filter(Post.status == status)
-    posts = query.order_by(Post.created_at.desc()).paginate(
+    posts = query.options(
+        joinedload(Post.author),
+        selectinload(Post.images),
+    ).order_by(Post.created_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
     )
     return jsonify({
@@ -1432,7 +1465,10 @@ def admin_delete_post(post_id):
 @jwt_required()
 @admin_required
 def admin_get_all_routes():
-    routes = TravelRoute.query.order_by(TravelRoute.created_at.desc()).all()
+    routes = TravelRoute.query.options(
+        joinedload(TravelRoute.author),
+        selectinload(TravelRoute.steps).selectinload(RouteStep.images),
+    ).order_by(TravelRoute.created_at.desc()).all()
     return jsonify([r.serialize() for r in routes]), 200
 
 @api.route('/admin/routes/<int:route_id>', methods=['DELETE'])
