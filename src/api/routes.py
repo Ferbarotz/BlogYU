@@ -461,10 +461,6 @@ def uploads(filename):
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     return send_from_directory(uploads_dir, filename)
 
-@api.route('/api/uploads/<filename>')
-def uploaded_file(filename):
-    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
-    return send_from_directory(uploads_dir, filename)
 
 # ----------------- POSTS -----------------
 @api.route('/upload-step-image', methods=['POST'])
@@ -1535,7 +1531,9 @@ def clear_read_notifications():
     db.session.commit()
     return jsonify({"msg": "Notificaciones leídas borradas"}), 200
 
-@api.route('/api/uploads/list', methods=['GET'])
+@api.route('/uploads-list', methods=['GET'])
+@jwt_required()
+@admin_required
 def list_uploads():
     uploads_dir = os.path.join(current_app.instance_path, 'uploads')
     try:
