@@ -18,16 +18,17 @@ const Categorias = () => {
         ]);
 
         const apiCategories = categoriesRes.ok ? await categoriesRes.json() : [];
-        const posts = postsRes.ok ? await postsRes.json() : [];
+        const postsData = postsRes.ok ? await postsRes.json() : [];
+        const postsList = Array.isArray(postsData)
+          ? postsData
+          : (postsData?.items || postsData?.posts || []);
 
-        const postsByCategory = Array.isArray(posts)
-          ? posts.reduce((acc, post) => {
-              const id = (post?.category || "").toString().trim().toLowerCase();
-              if (!id) return acc;
-              acc[id] = (acc[id] || 0) + 1;
-              return acc;
-            }, {})
-          : {};
+        const postsByCategory = postsList.reduce((acc, post) => {
+          const id = (post?.category || "").toString().trim().toLowerCase();
+          if (!id) return acc;
+          acc[id] = (acc[id] || 0) + 1;
+          return acc;
+        }, {});
 
         const merged = mergeCategoryData(apiCategories).map((cat) => ({
           ...cat,

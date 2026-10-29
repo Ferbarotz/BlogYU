@@ -8,6 +8,8 @@ const Posts = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -17,7 +19,14 @@ const Posts = () => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const items = Array.isArray(data) ? data : (data.items || data.posts || []);
-        setPosts(items);
+        setTotalPages(data?.pages ?? 1);
+        setTotal(data?.total ?? items.length);
+        // Pagina 1 reemplaza; las siguientes añaden (sin duplicados)
+        setPosts(prev => {
+          if (page === 1) return items;
+          const seen = new Set(prev.map(p => p.id));
+          return [...prev, ...items.filter(p => !seen.has(p.id))];
+        });
       } catch (error) {
         console.error("Error cargando posts:", error);
       } finally {
@@ -31,7 +40,7 @@ const Posts = () => {
   if (loading) {
     return (
       <div
-        className="d-flex flex-column align-items-center justify-content-center"
+        className="d-flex flex-column align-items-center justify-items-center"
         style={{ minHeight: "60vh", background: "#0d1117" }}
       >
         <div className="spinner-border mb-3" style={{ color: "#00f2fe", width: "3rem", height: "3rem" }}></div>
@@ -82,7 +91,7 @@ const Posts = () => {
             className="mx-3 fw-bold text-uppercase"
             style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "3px", fontSize: "0.75rem" }}
           >
-            {posts.length} publicación{posts.length !== 1 ? "es" : ""}
+            {total} publicación{total !== 1 ? "es" : ""}
           </span>
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
         </div>
@@ -102,15 +111,17 @@ const Posts = () => {
           </div>
         )}
 
-        <div className="text-center py-4">
-          <button
-            onClick={() => setPage(prev => prev + 1)}
-            className="btn btn-outline-secondary"
-            style={{ borderColor: "#00f2fe", color: "#00f2fe" }}
-          >
-            Cargar más
-          </button>
-        </div>
+        {page < totalPages && (
+          <div className="text-center py-4">
+            <button
+              onClick={() => setPage(prev => prev + 1)}
+              className="btn btn-outline-secondary"
+              style={{ borderColor: "#00f2fe", color: "#00f2fe" }}
+            >
+              Cargar más
+            </button>
+          </div>
+        )}
       </div>
 
       <style>{`body { background: #0d1117 !important; }`}</style>
