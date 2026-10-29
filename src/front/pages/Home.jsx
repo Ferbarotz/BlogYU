@@ -100,7 +100,9 @@ const Home = () => {
           const bg = data?.background || data?.home_background || data?.value || data?.url || data;
 
           if (bg) {
-            const resolved = typeof bg === "string" ? bg : (bg.url || null);
+            let resolved = typeof bg === "string" ? bg : (bg.url || null);
+            // Uploads locales: ruta relativa -> absoluta contra la API
+            if (resolved && resolved.startsWith("/")) resolved = `${API_BASE}${resolved}`;
             if (!cancelled && resolved) {
               setGlobalHomeBg(resolved);
               try {
@@ -136,7 +138,9 @@ const Home = () => {
           const data = await res.json();
           const bg = data?.background || data?.home_background || data?.value || data?.url || data;
           if (bg) {
-            const resolved = typeof bg === "string" ? bg : (bg.url || null);
+            let resolved = typeof bg === "string" ? bg : (bg.url || null);
+            // Uploads locales: ruta relativa -> absoluta contra la API
+            if (resolved && resolved.startsWith("/")) resolved = `${API_BASE}${resolved}`;
             if (resolved) {
               setGlobalHomeBg(resolved);
               try {

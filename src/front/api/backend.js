@@ -1,8 +1,7 @@
 export function getBackendURL() {
   const env =
-    (typeof process !== "undefined" &&
-      process.env &&
-      (process.env.REACT_APP_BACKEND_URL || process.env.BACKEND_URL)) ||
+    process.env.BACKEND_URL ||
+    (typeof process !== "undefined" && process.env && process.env.REACT_APP_BACKEND_URL) ||
     null;
 
   if (env) return env.replace(/\/$/, "");
