@@ -1,5 +1,6 @@
 import os
 import secrets
+from datetime import timedelta
 
 basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -63,6 +64,10 @@ class Config:
         "sqlite:///" + os.path.join(basedir, "instance", "blogyu.db")
     ))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+# Limita el tamano de CUALQUIER peticion (413 si se supera); protege la RAM de Render
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB
+# Duracion de la sesion (el default de flask-jwt-extended es 15 min)
+JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     # Envío de correo vía SendGrid Web API (HTTPS).

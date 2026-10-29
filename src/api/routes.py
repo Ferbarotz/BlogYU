@@ -12,6 +12,7 @@ from werkzeug.utils import secure_filename
 from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
 
 from .extensions import db, bcrypt, limiter
+from sqlalchemy.exc import IntegrityError
 from .models import User, Post, Comment, TravelRoute, RouteStep, RouteStepImage, PostImage, TokenBlocklist, Like
 from .models import Notification
 
@@ -160,6 +161,16 @@ MAX_ROUTE_DEST_LEN = 100
 MAX_STEP_TITLE_LEN = 200
 MAX_STEP_DESC_LEN = 5_000
 MAX_STEP_LOCATION_LEN = 200
+
+def _file_size_ok(file_obj, max_size=MAX_FILE_SIZE):
+    """True si el archivo pesa <= max_size (seek/tell)."""
+    try:
+        file_obj.seek(0, os.SEEK_END)
+        size = file_obj.tell()
+        file_obj.seek(0)
+        return size <= max_size
+    except Exception:
+        return True
 
 # ----------------- Helpers -----------------
 def _cloudinary_public_id(url):
@@ -444,7 +455,7 @@ def reset_password(token=None):
         user_id = int(raw_user_id)
     except Exception as e:
         current_app.logger.exception("Token inválido/expirado")
-        return jsonify({"msg": "Token inválido o expirado", "error": str(e)}), 400
+        return jsonify({"msg": "Token inválido o expirado"}), 400
 
     user = User.query.get(user_id)
     if not user:
@@ -490,6 +501,8 @@ def upload_step_image():
     if not allowed_file(file.filename, file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
+    if not _file_size_ok(file):
+        return jsonify({"msg": "Archivo demasiado grande"}), 400
     file_url = upload_to_cloudinary(file, folder="blogyu/steps")
     if not file_url:
         return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
@@ -505,8 +518,10 @@ def get_posts():
 
     query = Post.query
     if search:
+        # Busqueda case-insensitive con comodines LIKE escapados
+        safe = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         query = query.filter(
-            Post.title.contains(search) | Post.content.contains(search)
+            Post.title.ilike(f"%{safe}%", escape="\\") | Post.content.ilike(f"%{safe}%", escape="\\")
         )
     if category:
         query = query.filter(Post.category == category)
@@ -573,6 +588,8 @@ def create_post():
                 continue
             if not allowed_file(image_file.filename, image_file):
                 continue
+            if not _file_size_ok(image_file):
+                continue
             url = upload_to_cloudinary(image_file, folder="blogyu/posts")
             if url:
                 saved_urls.append(url)
@@ -629,13 +646,15 @@ def like_post(post_id):
     existing = Like.query.filter_by(user_id=user_id, post_id=post_id).first()
     if existing:
         db.session.delete(existing)
-        db.session.commit()
-        return jsonify({"msg": "Like removido", "likes_count": Post.query.get(post_id).likes.count()})
     else:
-        like = Like(user_id=user_id, post_id=post_id)
-        db.session.add(like)
+        db.session.add(Like(user_id=user_id, post_id=post_id))
+    try:
         db.session.commit()
-        return jsonify({"msg": "Like dado", "likes_count": Post.query.get(post_id).likes.count()})
+    except IntegrityError:
+        # Doble click / carrera: el like ya existia o acaba de quitarse
+        db.session.rollback()
+    likes_count = Like.query.filter_by(post_id=post_id).count()
+    return jsonify({"msg": "Like actualizado", "likes_count": likes_count}), 200
 
 @api.route('/posts/<int:post_id>/likes', methods=['GET'])
 def get_post_likes(post_id):
@@ -711,6 +730,8 @@ def update_post(post_id):
             current_count = PostImage.query.filter_by(post_id=p.id).count()
             for i, image_file in enumerate(new_files):
                 if not allowed_file(image_file.filename, image_file):
+                    continue
+                if not _file_size_ok(image_file):
                     continue
                 url = upload_to_cloudinary(image_file, folder="blogyu/posts")
                 if url:
@@ -922,6 +943,8 @@ def upload_user_background(user_id):
     if not allowed_file(image_file.filename, image_file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
+    if not _file_size_ok(image_file):
+        return jsonify({"msg": "Archivo demasiado grande"}), 400
     file_url = upload_to_cloudinary(image_file, folder="blogyu/backgrounds")
     if not file_url:
         return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
@@ -933,7 +956,7 @@ def upload_user_background(user_id):
     except Exception as ex:
         current_app.logger.exception("Fallo guardando background en BD")
         db.session.rollback()
-        return jsonify({"msg": "Error actualizando usuario", "error": str(ex)}), 500
+        return jsonify({"msg": "Error actualizando usuario"}), 500
 
     try:
         serialized = user.serialize()
@@ -969,6 +992,8 @@ def upload_user_profile_pic(user_id):
     if not allowed_file(image_file.filename, image_file):
         return jsonify({"msg": "Tipo de archivo no permitido"}), 400
 
+    if not _file_size_ok(image_file):
+        return jsonify({"msg": "Archivo demasiado grande"}), 400
     file_url = upload_to_cloudinary(image_file, folder="blogyu/avatars")
     if not file_url:
         return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
@@ -980,7 +1005,7 @@ def upload_user_profile_pic(user_id):
     except Exception as ex:
         current_app.logger.exception("Fallo guardando avatar en BD")
         db.session.rollback()
-        return jsonify({"msg": "Error actualizando usuario", "error": str(ex)}), 500
+        return jsonify({"msg": "Error actualizando usuario"}), 500
 
     try:
         serialized = user.serialize()
@@ -1083,7 +1108,7 @@ def update_user(user_id):
         db.session.rollback()
         tb = traceback.format_exc()
         current_app.logger.debug("Traceback:\n%s", tb)
-        return jsonify({'msg': 'Error actualizando usuario', 'error': str(exc)}), 500
+        return jsonify({'msg': 'Error actualizando usuario'}), 500
 
 # ----------------- TRAVEL ROUTES -----------------
 @api.route('/routes', methods=['POST'])
@@ -1332,7 +1357,7 @@ def set_home_background():
                 image_file.save(save_path)
             except Exception as ex:
                 current_app.logger.exception("[bg] fallo al guardar el archivo")
-                return jsonify({"msg": "Error guardando archivo", "error": str(ex)}), 500
+                return jsonify({"msg": "Error guardando archivo"}), 500
 
             file_url = f"/api/uploads/{filename}"
             try:
