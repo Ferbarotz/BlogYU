@@ -73,5 +73,8 @@ class Config:
     # Envío de correo vía SendGrid Web API (HTTPS).
     MAIL_PASSWORD = (os.environ.get("MAIL_PASSWORD") or "").strip() or None
 
-    RATELIMIT_STORAGE_URL = os.environ.get("REDIS_URL", "memory://")
+    # Redis opcional (rate-limiting compartido entre workers en produccion).
+    # Cadena vacia => Flask-Limiter usa memoria local.
+    REDIS_URL = _clean(os.environ.get("REDIS_URL", ""))
+    RATELIMIT_STORAGE_URL = REDIS_URL or "memory://"
     RATELIMIT_STORAGE_URI = RATELIMIT_STORAGE_URL  # nombre usado por Flask-Limiter 3.x

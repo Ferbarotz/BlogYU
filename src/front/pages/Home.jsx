@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import PostCard from "../components/PostCard";
 import RouteCard from "../components/RouteCard";
 import { API_BASE } from "../api/backend";
+import { DEFAULT_HOME_BG_URL, HERO_OVERLAY, FALLBACK_HERO_GRADIENT } from "../config/backgrounds";
 
 const Home = () => {
   const [feed, setFeed] = useState([]);
@@ -11,7 +12,7 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const [globalHomeBg, setGlobalHomeBg] = useState(null);
+  const [globalHomeBg, setGlobalHomeBg] = useState(DEFAULT_HOME_BG_URL || null);
   const [adminEditing, setAdminEditing] = useState(false);
   const [previewBg, setPreviewBg] = useState(null);
   const [uploadingBg, setUploadingBg] = useState(false);
@@ -251,8 +252,8 @@ const Home = () => {
   const chosenBgUrl = previewBg || (token ? (user?.background || globalHomeBg) : globalHomeBg);
   const heroBgUrl = chosenBgUrl ? normalizeUrl(chosenBgUrl) : null;
   const heroBackground = heroBgUrl
-    ? `linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), url(${heroBgUrl})`
-    : "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)";
+    ? `${HERO_OVERLAY}, url(${heroBgUrl})`
+    : FALLBACK_HERO_GRADIENT;
 
   const handleSelectFile = (e) => {
     const file = e.target.files?.[0];

@@ -24,8 +24,8 @@ export default function ResetPassword() {
       setError('Token inválido o ausente.');
       return;
     }
-    if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
+    if (password.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres.');
       return;
     }
     if (password !== confirm) {
@@ -35,10 +35,12 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/reset-password/${encodeURIComponent(token)}`, {
+      // El token va en el body JSON (no en la URL) para evitar problemas de
+      // codificación/longitud y que quede registrado en logs de proxies.
+      const res = await fetch(`${API_BASE}/api/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ token, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -128,11 +130,11 @@ export default function ResetPassword() {
                 </label>
                 <input
                   type="password"
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={8}
                   className="form-control"
                   style={{
                     background: 'rgba(255,255,255,0.03)',
