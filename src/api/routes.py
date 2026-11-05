@@ -9,7 +9,8 @@ from functools import wraps
 
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
-from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, decode_token, get_jwt)
+from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, get_jwt)
+import jwt as _pyjwt
 from sqlalchemy.orm import joinedload, selectinload
 
 from .extensions import db, bcrypt, limiter
@@ -404,10 +405,11 @@ def forgot_password():
         # Respuesta idéntica al caso existente: no revela si el email está registrado
         return jsonify(generic_ok), 200
 
-    expires = timedelta(minutes=30)
-    # Token de proposito especifico: solo vale para reset, no para sesion
+    expires = timedelta(hours=1)
+    # Token de proposito especifico: solo vale para reset, no para sesion.
+    # identity DEBE ser str: PyJWT >= 2.10 rechaza "sub" no-string (InvalidSubjectError).
     token = create_access_token(
-        identity=user.id,
+        identity=str(user.id),
         expires_delta=expires,
         additional_claims={"purpose": "reset"}
     )
@@ -418,7 +420,7 @@ def forgot_password():
     body = (
         "Para restablecer tu contraseña haz clic en el siguiente enlace:\n\n"
         f"{reset_url}\n\n"
-        "Este enlace expirará en 30 minutos."
+        "Este enlace expirará en 1 hora."
     )
 
     if current_app.config.get('MAIL_SUPPRESS_SEND'):
@@ -436,34 +438,48 @@ def forgot_password():
     return jsonify(generic_ok), 200
 
 @api.route('/reset-password', methods=['POST'])
-@api.route('/reset-password/<token>', methods=['POST'])
+@api.route('/reset-password/<token>', methods=['POST'])  # retrocompatibilidad
 def reset_password(token=None):
-    if not token:
-        token = request.args.get('token') or (request.get_json(silent=True) or {}).get('token')
+    body = request.get_json(silent=True) or {}
+    # Prioridad: body JSON -> query param -> path
+    token = (body.get('token') or request.args.get('token') or token or '').strip()
     if not token:
         return jsonify({"msg": "Token requerido"}), 400
 
+    invalid = (jsonify({"msg": "Token inválido o expirado"}), 400)
     try:
-        data = decode_token(token)
-        # Rechazar tokens de sesion: solo valen los creados para reset
-        if data.get("purpose") != "reset":
-            return jsonify({"msg": "Token invalido o expirado"}), 400
-        # Un solo uso: si el jti ya fue consumido esta en la blocklist
-        jti = data.get("jti")
-        if not jti or TokenBlocklist.query.filter_by(jti=jti).first():
-            return jsonify({"msg": "Token invalido o expirado"}), 400
-        raw_user_id = data.get('sub') or data.get('identity')
-        user_id = int(raw_user_id)
-    except Exception as e:
-        current_app.logger.exception("Token inválido/expirado")
-        return jsonify({"msg": "Token inválido o expirado"}), 400
+        # PyJWT directo (sin decode_token de flask-jwt-extended):
+        # - no pasa por token_in_blocklist_loader ni validaciones de sesion
+        # - verify_sub=False acepta tokens antiguos emitidos con "sub" entero
+        data = _pyjwt.decode(
+            token,
+            current_app.config["JWT_SECRET_KEY"],
+            algorithms=[current_app.config.get("JWT_ALGORITHM", "HS256")],
+            options={"verify_sub": False},
+        )
+    except _pyjwt.ExpiredSignatureError:
+        return jsonify({"msg": "El enlace ha expirado. Por favor solicita uno nuevo."}), 400
+    except Exception:
+        current_app.logger.exception("Token de reset inválido")
+        return invalid
+
+    # Rechazar tokens de sesion: solo valen los creados para reset
+    if data.get("purpose") != "reset":
+        return invalid
+    # Un solo uso: si el jti ya fue consumido esta en la blocklist
+    jti = data.get("jti")
+    if not jti or TokenBlocklist.query.filter_by(jti=jti).first():
+        return invalid
+    try:
+        user_id = int(data.get('sub'))
+    except (TypeError, ValueError):
+        return invalid
 
     user = User.query.get(user_id)
     if not user:
         return jsonify({"msg": "Usuario no encontrado"}), 404
 
-    payload = request.get_json(silent=True) or {}
-    new_password = payload.get('password') or request.form.get('password')
+    new_password = body.get('password') or request.form.get('password')
     if not new_password:
         return jsonify({"msg": "Nueva contraseña requerida"}), 400
 
@@ -1359,37 +1375,20 @@ def get_home_background():
 @admin_required
 def set_home_background():
     try:
-        inst_path = current_app.instance_path
-        uploads_dir = os.path.join(inst_path, 'uploads')
-        settings_path = os.path.join(inst_path, 'home_background.json')
-
-        current_app.logger.debug("[bg] instance_path=%s uploads_dir=%s", inst_path, uploads_dir)
-        os.makedirs(uploads_dir, exist_ok=True)
+        settings_path = os.path.join(current_app.instance_path, 'home_background.json')
 
         if 'background' in request.files and request.files['background'].filename:
             image_file = request.files['background']
-            if image_file.filename == "":
-                return jsonify({"msg": "Nombre de archivo vacío"}), 400
             if not allowed_file(image_file.filename, image_file):
                 return jsonify({"msg": "Tipo de archivo no permitido"}), 400
-            try:
-                image_file.seek(0, os.SEEK_END)
-                size = image_file.tell()
-                image_file.seek(0)
-                if size > MAX_FILE_SIZE:
-                    return jsonify({"msg": "Archivo demasiado grande"}), 400
-            except Exception:
-                current_app.logger.debug("[bg] no se pudo determinar tamaño")
+            if not _file_size_ok(image_file):
+                return jsonify({"msg": "Archivo demasiado grande"}), 400
 
-            filename = f"home_bg_{int(time())}_{secure_filename(image_file.filename)}"
-            save_path = os.path.join(uploads_dir, filename)
-            try:
-                image_file.save(save_path)
-            except Exception as ex:
-                current_app.logger.exception("[bg] fallo al guardar el archivo")
-                return jsonify({"msg": "Error guardando archivo"}), 500
-
-            file_url = f"/api/uploads/{filename}"
+            # Cloudinary en lugar de disco local: el disco de Render es efimero
+            # y se pierde en cada deploy/reinicio.
+            file_url = upload_to_cloudinary(image_file, folder="blogyu/backgrounds")
+            if not file_url:
+                return jsonify({"msg": "Error subiendo imagen a Cloudinary"}), 500
             try:
                 with open(settings_path, 'w', encoding='utf-8') as f:
                     json.dump({"background": file_url, "updated_at": datetime.utcnow().isoformat()}, f)
