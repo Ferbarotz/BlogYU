@@ -67,7 +67,7 @@ def _get_sendgrid_api_key():
 
 # Identidad de remitente verificada en SendGrid. SendGrid rechaza (HTTP 403)
 # cualquier "from" que no coincida EXACTAMENTE con un Sender verificado.
-VERIFIED_SENDER_EMAIL = "ferbarotz23@gmail.com"
+VERIFIED_SENDER_EMAIL = os.environ.get("VERIFIED_SENDER_EMAIL", "ferbarotz23@gmail.com")
 
 
 def _get_sender_email():
@@ -163,6 +163,35 @@ MAX_ROUTE_DEST_LEN = 100
 MAX_STEP_TITLE_LEN = 200
 MAX_STEP_DESC_LEN = 5_000
 MAX_STEP_LOCATION_LEN = 200
+MAX_ROUTE_META_LEN = 50  # start_date / budget (String(50) en BD)
+MAX_IMAGES_PER_POST = 20
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+ALLOWED_ROLES = {"user", "moderator", "editor", "admin"}
+
+
+def _clean_image_urls(value):
+    """Devuelve solo URLs https (strings) de una lista enviada por el cliente."""
+    if not isinstance(value, list):
+        return []
+    out = []
+    for u in value:
+        if isinstance(u, str) and u.strip().lower().startswith("https://") and len(u) <= 500:
+            out.append(u.strip())
+    return out[:MAX_IMAGES_PER_POST]
+
+
+def _clean_meta(value):
+    """start_date / budget: (valor_str_o_None, ok)."""
+    if value is None or value == "":
+        return None, True
+    s = str(value).strip()
+    return s, len(s) <= MAX_ROUTE_META_LEN
+
+
+def _route_image_urls(route):
+    """URLs de Cloudinary de todas las imagenes de los pasos de una ruta."""
+    return [img.url for step in route.steps for img in step.images
+            if img.url and "/res.cloudinary.com" in img.url]
 
 def _file_size_ok(file_obj, max_size=MAX_FILE_SIZE):
     """True si el archivo pesa <= max_size (seek/tell)."""
@@ -362,10 +391,14 @@ def logout():
 def register():
     body = request.get_json(silent=True) or {}
     name = body.get('name')
-    email = (body.get('email') or '').strip().lower()
+    email = body.get('email')
+    email = email.strip().lower() if isinstance(email, str) else ''
     password = body.get('password')
-    if not email or not password:
-        return jsonify({"msg": "Email y password requeridos"}), 400
+    if not isinstance(name, str) or not isinstance(password, str):
+        return jsonify({"msg": "Nombre, email y password requeridos"}), 400
+    name = name.strip()
+    if not name or not email or not password:
+        return jsonify({"msg": "Nombre, email y password requeridos"}), 400
     if not _validate_max_len(name, MAX_NAME_LEN):
         return jsonify({"msg": f"El nombre no puede superar {MAX_NAME_LEN} caracteres"}), 400
     if not _validate_max_len(email, MAX_EMAIL_LEN):
@@ -374,11 +407,10 @@ def register():
         return jsonify({"msg": "La contrasena debe tener minimo 8 caracteres"}), 400
     if len(password) > 128:
         return jsonify({"msg": "La contrasena no puede superar 128 caracteres"}), 400
+    if not EMAIL_RE.match(email):
+        return jsonify({"msg": "Formato de email invalido"}), 400
     if User.query.filter_by(email=email).first():
         return jsonify({"msg": "El usuario ya existe"}), 400
-
-    if not re.match(r"[^@]+@[^@]+\.[^@]+",email):
-        return jsonify({"msg": "Formato de email invalido"}),400    
 
     new_user = User(name=name, email=email)
     new_user.password = password
@@ -595,11 +627,11 @@ def create_post():
     saved_urls = []
 
     if request.is_json:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         title = data.get('title')
         content = data.get('content')
         category = data.get('category')
-        saved_urls = data.get('images', [])
+        saved_urls = _clean_image_urls(data.get('images', []))
     else:
         title = request.form.get('title')
         content = request.form.get('content')
@@ -617,6 +649,8 @@ def create_post():
             if url:
                 saved_urls.append(url)
 
+    if not all(isinstance(v, (str, type(None))) for v in (title, content, category)):
+        return jsonify({"msg": "title, content y category deben ser texto"}), 400
     title = (title or "").strip()
     content = (content or "").strip()
     category = (category or "").strip() or None
@@ -692,35 +726,30 @@ def update_post(post_id):
     if p.user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
 
+    urls_to_destroy = []
     if request.is_json:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+        for field in ("title", "content", "category"):
+            if field in data and not isinstance(data[field], (str, type(None))):
+                return jsonify({"msg": f"{field} debe ser texto"}), 400
         p.title = data.get("title", p.title)
         p.content = data.get("content", p.content)
         p.category = data.get("category", p.category)
 
-
-        new_image_urls = data.get("new_images", [])
+        new_image_urls = _clean_image_urls(data.get("new_images", []))
         current_count = PostImage.query.filter_by(post_id=p.id).count()
         for i, url in enumerate(new_image_urls):
             db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
 
-        # Cleanup: eliminar imágenes de PostImage que ya no se mantienen
-        keep_ids = set(data.get("keep_image_ids", []))
-        for img in list(p.images):
-            if img.id not in keep_ids:
-                # Eliminar de Cloudinary si es URL de Cloudinary
-                if img.url and "/res.cloudinary.com" in img.url:
-                    try:
-                        _destroy_cloudinary_image(img.url)
-                    except Exception:
-                        current_app.logger.exception("Error eliminando imagen antigua de Cloudinary")
-                try:
-                    old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
-                    if os.path.exists(old_path):
-                        os.remove(old_path)
-                except Exception:
-                    pass
-                db.session.delete(img)
+        # Solo se limpian imagenes si el cliente envia keep_image_ids explicitamente
+        # (omitirlo borraba TODAS las imagenes del post).
+        if isinstance(data.get("keep_image_ids"), list):
+            keep_ids = set(data["keep_image_ids"])
+            for img in list(p.images):
+                if img.id not in keep_ids:
+                    if img.url and "/res.cloudinary.com" in img.url:
+                        urls_to_destroy.append(img.url)
+                    db.session.delete(img)
 
         db.session.flush()
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
@@ -778,6 +807,9 @@ def update_post(post_id):
         return jsonify({"msg": f"La categoría no puede superar {MAX_CATEGORY_LEN} caracteres"}), 400
 
     db.session.commit()
+    # Borrado irreversible en Cloudinary SOLO tras confirmar la BD
+    for url in urls_to_destroy:
+        _destroy_cloudinary_image(url)
     return jsonify(p.serialize()), 200
 
 @api.route('/posts/<int:post_id>', methods=['DELETE'])
@@ -1111,6 +1143,8 @@ def update_user(user_id):
                 return jsonify({'msg': 'El email no puede estar vacío'}), 400
             if not _validate_max_len(new_email, MAX_EMAIL_LEN):
                 return jsonify({'msg': f'El email no puede superar {MAX_EMAIL_LEN} caracteres'}), 400
+            if not EMAIL_RE.match(new_email):
+                return jsonify({'msg': 'Formato de email invalido'}), 400
             existing = User.query.filter(User.email == new_email, User.id != user.id).first()
             if existing:
                 return jsonify({'msg': 'Ese email ya está en uso'}), 400
@@ -1154,6 +1188,10 @@ def create_route():
         return jsonify({"msg": f"El destino no puede superar {MAX_ROUTE_DEST_LEN} caracteres"}), 400
     if not isinstance(steps, list):
         return jsonify({"msg": "steps debe ser una lista"}), 400
+    start_date, ok_sd = _clean_meta(start_date)
+    budget, ok_bd = _clean_meta(budget)
+    if not ok_sd or not ok_bd:
+        return jsonify({"msg": f"start_date y budget no pueden superar {MAX_ROUTE_META_LEN} caracteres"}), 400
 
     route = TravelRoute(
         title=title, destination=destination,
@@ -1200,7 +1238,7 @@ def create_route():
         db.session.add(step)
         db.session.flush()
 
-        step_images = s.get("images") or []
+        step_images = _clean_image_urls(s.get("images") or [])
         for img_url in step_images:
             if img_url:
                 db.session.add(RouteStepImage(url=img_url, step_id=step.id))
@@ -1245,8 +1283,11 @@ def delete_route(route_id):
     route = TravelRoute.query.get_or_404(route_id)
     if route.user_id != user_id:
         return jsonify({"msg": "No tienes permisos"}), 403
+    urls = _route_image_urls(route)
     db.session.delete(route)
     db.session.commit()
+    for url in urls:
+        _destroy_cloudinary_image(url)
     return jsonify({"msg": "Ruta eliminada"}), 200
 
 @api.route('/my-routes', methods=['GET'])
@@ -1271,8 +1312,14 @@ def update_route(route_id):
 
     route.title = (body.get("title") or route.title).strip()
     route.destination = (body.get("destination") or route.destination).strip()
-    route.start_date = body.get("start_date", route.start_date)
-    route.budget = body.get("budget", route.budget)
+    if "start_date" in body:
+        route.start_date, ok_sd = _clean_meta(body.get("start_date"))
+        if not ok_sd:
+            return jsonify({"msg": f"start_date no puede superar {MAX_ROUTE_META_LEN} caracteres"}), 400
+    if "budget" in body:
+        route.budget, ok_bd = _clean_meta(body.get("budget"))
+        if not ok_bd:
+            return jsonify({"msg": f"budget no puede superar {MAX_ROUTE_META_LEN} caracteres"}), 400
 
     if not route.title or not route.destination:
         return jsonify({"msg": "title y destination son requeridos"}), 400
@@ -1282,6 +1329,9 @@ def update_route(route_id):
         return jsonify({"msg": f"El destino no puede superar {MAX_ROUTE_DEST_LEN} caracteres"}), 400
 
     new_steps = body.get("steps")
+    if new_steps is not None and (not isinstance(new_steps, list) or not all(isinstance(s, dict) for s in new_steps)):
+        return jsonify({"msg": "steps debe ser una lista de objetos"}), 400
+    old_urls = set(_route_image_urls(route)) if new_steps is not None else set()
     if new_steps is not None:
         allowed_types = {"vuelo","aeropuerto","vip","hotel","restaurante","cafe","lugar","transporte","otro"}
 
@@ -1324,14 +1374,17 @@ def update_route(route_id):
             db.session.add(step)
             db.session.flush()
 
-            for url in (s.get("keep_image_urls") or []):
-                if url:
-                    db.session.add(RouteStepImage(url=url, step_id=step.id))
-            for url in (s.get("new_images") or []):
-                if url:
-                    db.session.add(RouteStepImage(url=url, step_id=step.id))
+            for url in _clean_image_urls(s.get("keep_image_urls") or []):
+                db.session.add(RouteStepImage(url=url, step_id=step.id))
+            for url in _clean_image_urls(s.get("new_images") or []):
+                db.session.add(RouteStepImage(url=url, step_id=step.id))
 
     db.session.commit()
+    # Imagenes descartadas: borrar de Cloudinary solo tras confirmar la BD
+    if old_urls:
+        db.session.expire(route)
+        for url in old_urls - set(_route_image_urls(route)):
+            _destroy_cloudinary_image(url)
     return jsonify({"msg": "Ruta actualizada", "route": route.serialize()}), 200
 
 # ----------------- ADMIN / SETTINGS -----------------
@@ -1400,8 +1453,10 @@ def set_home_background():
         if request.is_json:
             body = request.get_json(silent=True) or {}
             bg_url = body.get('background') or body.get('url')
-            if not bg_url:
+            if not bg_url or not isinstance(bg_url, str):
                 return jsonify({"msg": "background URL requerida"}), 400
+            if not (bg_url.lower().startswith("https://") or bg_url.startswith("/api/uploads/")):
+                return jsonify({"msg": "background debe ser una URL https o /api/uploads/..."}), 400
             try:
                 with open(settings_path, 'w', encoding='utf-8') as f:
                     json.dump({"background": bg_url, "updated_at": datetime.utcnow().isoformat()}, f)
@@ -1475,8 +1530,11 @@ def admin_get_all_routes():
 @admin_required
 def admin_delete_route(route_id):
     route = TravelRoute.query.get_or_404(route_id)
+    urls = _route_image_urls(route)
     db.session.delete(route)
     db.session.commit()
+    for url in urls:
+        _destroy_cloudinary_image(url)
     return jsonify({"msg": "Ruta eliminada por admin"}), 200
 
 # ----------------- ADMIN STATS -----------------
@@ -1513,6 +1571,8 @@ def get_all_users():
 @jwt_required()
 @admin_required
 def admin_delete_user(user_id):
+    if user_id == int(get_jwt_identity()):
+        return jsonify({"msg": "No puedes eliminar tu propia cuenta de admin"}), 400
     user = User.query.get_or_404(user_id)
     # 1) Comentarios de cualquier autor en los posts del usuario
     post_ids = [pid for (pid,) in db.session.query(Post.id).filter_by(user_id=user_id).all()]
@@ -1532,10 +1592,14 @@ def admin_delete_user(user_id):
 def admin_update_user(user_id):
     user = User.query.get_or_404(user_id)
     data = request.get_json(silent=True) or {}
+    if user.id == int(get_jwt_identity()) and (data.get('is_admin') is False or data.get('role') not in (None, 'admin')):
+        return jsonify({"msg": "No puedes quitarte a ti mismo el rol de admin"}), 400
+    if 'role' in data and data['role'] not in ALLOWED_ROLES:
+        return jsonify({"msg": "Rol invalido"}), 400
     if 'is_admin' in data:
         user.is_admin = bool(data['is_admin'])
     if 'role' in data:
-        user.role = str(data['role'])
+        user.role = data['role']
     db.session.commit()
     return jsonify(user.serialize()), 200
 
@@ -1610,5 +1674,6 @@ def list_uploads():
         image_files = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif'))]
         return jsonify({"files": image_files}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.exception("Error listando uploads")
+        return jsonify({"error": "No se pudo listar el directorio de uploads"}), 500
 

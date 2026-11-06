@@ -35,6 +35,10 @@ def create_app():
 
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
+        # Los tokens de recuperación (purpose=reset) NO valen como sesión en rutas @jwt_required.
+        # (reset_password decodifica con PyJWT directo y no pasa por este loader.)
+        if jwt_payload.get("purpose") == "reset":
+            return True
         jti = jwt_payload.get("jti")
         if not jti:
             return False
