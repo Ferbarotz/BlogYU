@@ -21,6 +21,12 @@ import EditRoute from "./pages/EditRoute";
 import AdminDashboard from "./pages/AdminDashboard";
 
 import ProtectedRoute from "./components/ProtectedRoute";
+import { useStore } from "./store";
+
+function ProfileRedirect() {
+  const { user } = useStore();
+  return <Navigate to={user?.id ? `/profile/${user.id}` : "/login"} replace />;
+}
 
 export default function AppRoutes() {
   return (
@@ -43,16 +49,16 @@ export default function AppRoutes() {
         <Route path="/posts/:id" element={<PostDetail />} />
 
         {/* Rutas - públicas */}
-        <Route path="/create-route" element={<CreateRoute />} />
+        <Route path="/create-route" element={<ProtectedRoute><CreateRoute /></ProtectedRoute>} />
         <Route path="/route/:id" element={<RouteDetail />} />
-        <Route path="/edit-route/:id" element={<EditRoute />} />
+        <Route path="/edit-route/:id" element={<ProtectedRoute><EditRoute /></ProtectedRoute>} />
 
         {/* Categorías - pública */}
         <Route path="/categories" element={<Categorias />} />
 
         {/* Perfil - público */}
         <Route path="/profile/:id" element={<Profile />} />
-        <Route path="/profile" element={<Navigate to="/" replace />} />
+        <Route path="/profile" element={<ProfileRedirect />} />
 
         {/* Crear / Editar posts (protegidos) */}
         <Route path="/new-post" element={<ProtectedRoute><NewPost /></ProtectedRoute>} />

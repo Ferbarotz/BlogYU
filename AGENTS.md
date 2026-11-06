@@ -21,8 +21,8 @@ pipenv install          # o: pip install -r requirements.txt
 # Servidor de desarrollo de Flask (FLASK_APP se resuelve vía src/api/__init__.py:create_app)
 cd src && flask run --port 5000
 
-# Alternativa con wsgi.py (debe ejecutarse desde src/ para que el import 'api' funcione)
-cd src && python ../wsgi.py
+# Alternativa con wsgi.py (desde la raíz del repo; importa src.api)
+python wsgi.py
 
 # Migraciones de base de datos
 flask db migrate -m "descripción"
@@ -100,11 +100,10 @@ Requeridas para la funcionalidad completa (ver `src/api/config.py`). El `.env` e
 
 ## No hagas
 
-- **No expongas en producción** el endpoint `GET /api/secret-setup-admin-xyz123`: crea un admin con credenciales en texto plano incrustadas en `routes.py`.
-- **No confíes en `ProtectedRoute` para restringir admin**: no aplica `adminOnly`, cualquier usuario autenticado puede navegar a `/admin` en el frontend. La protección real está en el backend con `admin_required`.
-- **No edites ni trates como fuente de verdad los archivos sueltos**: `src/api/routes.py.bak`, `routes.py.current.bak`, `webpack.config.js.save`, `fix_passwords.py.save`, scripts puntuales (`cleanup_users.py`, `delete_posts.py`, `fix_passwords.py`), volcados JSON (`*_backup.json`, `users_before_cleanup.json`), y los JS sueltos en el backend (`src/api/backend.js`, `src/api/users.js`).
-- **No uses `src/front/hooks/useGlobalReducer.jsx`**: está vacío y no se usa en ningún sitio.
-- No ejecutes `wsgi.py` desde la raíz del repo: su `from api import create_app` solo funciona desde `src/`. El `Procfile` (gunicorn) usa `"src.api:create_app()"` y sí funciona desde la raíz.
+- No uses `decode_token` de flask-jwt-extended para el reset de contraseña: `reset_password` usa PyJWT directo. Los tokens de reset deben crearse con `identity=str(user.id)` (PyJWT >= 2.10 rechaza `sub` no-string).
+- No borres imágenes de Cloudinary antes del `db.session.commit()`: si la BD falla, la imagen se pierde para siempre.
+- No guardes archivos subidos en disco local en producción: el disco de Render se borra en cada deploy. Usa `upload_to_cloudinary`.
+- La protección real de admin está en el backend (`admin_required`); `ProtectedRoute adminOnly` solo es UX.
 - No subas archivos `.env*` al repositorio.
 - No instales dependencias nuevas sin avisar.
 
