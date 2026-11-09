@@ -545,9 +545,11 @@ const Profile = () => {
               <h5 className="fw-bold mb-4" style={{ color: "#f9d423", letterSpacing: "2px", fontSize: "0.8rem", textTransform: "uppercase" }}>
                 📊 Estadísticas
               </h5>
-              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.95rem", lineHeight: "1.7" }}>
-                Próximamente podrás ver aquí el impacto de tus publicaciones, seguidores y destinos favoritos.
-              </p>
+              {user?.joined_at && (
+                <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.9rem", marginBottom: "4px" }}>
+                  🗓️ Miembro desde {new Date(user.joined_at).toLocaleDateString("es-ES", { month: "long", year: "numeric" })}
+                </p>
+              )}
               {isOwnProfile && (
                 <div style={{ marginTop: "18px" }}>
                   <p style={{ color: "rgba(255,255,255,0.6)", marginBottom: "10px", fontSize: "0.85rem" }}>🔗 Redes públicas</p>
@@ -563,13 +565,17 @@ const Profile = () => {
                 </div>
               )}
               <div className="mt-4 d-flex gap-3 flex-wrap">
-                {["Publicaciones", "Seguidores", "Favoritos"].map((stat) => (
-                  <div key={stat} style={{
+                {[
+                  { label: "Publicaciones", value: user?.posts_count },
+                  { label: "Rutas", value: user?.routes_count },
+                  { label: "Me gusta dados", value: user?.likes_given },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{
                     background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
                     borderRadius: "12px", padding: "10px 14px", textAlign: "center", flex: "1", minWidth: "80px"
                   }}>
-                    <p className="fw-black mb-1" style={{ color: "#00f2fe", fontSize: "1.2rem" }}>—</p>
-                    <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 0 }}>{stat}</p>
+                    <p className="fw-black mb-1" style={{ color: "#00f2fe", fontSize: "1.2rem" }}>{Number.isFinite(value) ? value : 0}</p>
+                    <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 0 }}>{label}</p>
                   </div>
                 ))}
               </div>

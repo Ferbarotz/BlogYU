@@ -9,7 +9,7 @@ from functools import wraps
 
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
-from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, get_jwt)
+from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, get_jwt, verify_jwt_in_request)
 import jwt as _pyjwt
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -844,7 +844,15 @@ def like_post(post_id):
 @api.route('/posts/<int:post_id>/likes', methods=['GET'])
 def get_post_likes(post_id):
     count = Like.query.filter_by(post_id=post_id).count()
-    return jsonify({"likes_count": count}), 200
+    liked_by_me = False
+    try:
+        verify_jwt_in_request(optional=True)
+        ident = get_jwt_identity()
+        if ident:
+            liked_by_me = Like.query.filter_by(post_id=post_id, user_id=int(ident)).first() is not None
+    except Exception:
+        liked_by_me = False
+    return jsonify({"likes_count": count, "liked_by_me": liked_by_me}), 200
 
 @api.route('/posts/<int:post_id>', methods=['PUT'])
 @jwt_required()
@@ -1050,6 +1058,8 @@ def add_comment(post_id):
         return jsonify({"msg": "El comentario no puede estar vacio"}), 400
     if not _validate_max_len(content, MAX_COMMENT_LEN):
         return jsonify({"msg": f"El comentario no puede superar {MAX_COMMENT_LEN} caracteres"}), 400
+    if not Post.query.get(post_id):
+        return jsonify({"msg": "Post no encontrado"}), 404
     new_comment = Comment(
         content=content,
         author_name=author_name,
@@ -1084,6 +1094,8 @@ def add_comment(post_id):
 def edit_comment(post_id, comment_id):
     user_id = int(get_jwt_identity())
     comment = Comment.query.get_or_404(comment_id)
+    if comment.post_id != post_id:
+        return jsonify({"msg": "Comentario no encontrado"}), 404
     if comment.user_id != user_id:
         return jsonify({"msg": "No tienes permisos para editar este comentario"}), 403
     body = request.get_json(silent=True) or {}
@@ -1101,6 +1113,8 @@ def edit_comment(post_id, comment_id):
 def delete_comment(post_id, comment_id):
     user_id = int(get_jwt_identity())
     comment = Comment.query.get_or_404(comment_id)
+    if comment.post_id != post_id:
+        return jsonify({"msg": "Comentario no encontrado"}), 404
     if comment.user_id != user_id:
         return jsonify({"msg": "No tienes permisos para borrar este comentario"}), 403
     db.session.delete(comment)
@@ -1774,7 +1788,7 @@ def get_user_public(user_id):
         "posts_count": posts_count,
         "routes_count": routes_count,
         "likes_given": likes_given,
-        "joined_at": user.created_at.isoformat() if hasattr(user, 'created_at') else None,
+        "joined_at": user.created_at.isoformat() if user.created_at else None,
         "profile_shape": user.profile_shape or "circle",
         "social": social,
     }), 200

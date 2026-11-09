@@ -8,6 +8,7 @@ const MyPosts = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -62,14 +63,23 @@ const MyPosts = () => {
 
   const handleDelete = async (postId) => {
     if (!window.confirm("¿Eliminar esta publicación? Esta acción no se puede deshacer.")) return;
+    setDeleteError("");
     try {
       const res = await fetch(`${API_BASE}/api/posts/${postId}`, {
         method: "DELETE",
         headers: { ...authHeaders(), "Content-Type": "application/json" }
       });
-      if (res.ok) setPosts(prev => prev.filter(p => String(p.id) !== String(postId)));
+      if (res.ok) {
+        setPosts(prev => prev.filter(p => String(p.id) !== String(postId)));
+      } else if (res.status === 401) {
+        setDeleteError("Tu sesión ha expirado, vuelve a iniciar sesión.");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setDeleteError(data.msg || "No se pudo eliminar la publicación. Inténtalo de nuevo.");
+      }
     } catch (err) {
       console.error("Error al eliminar:", err);
+      setDeleteError("No se pudo eliminar la publicación (error de conexión).");
     }
   };
 
@@ -126,6 +136,13 @@ const MyPosts = () => {
           </span>
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
         </div>
+
+        {deleteError && (
+          <div className="d-flex justify-content-between align-items-center mb-4" style={{ background: "rgba(255,78,80,0.1)", border: "1px solid rgba(255,78,80,0.4)", color: "#ff8a8c", borderRadius: "12px", padding: "0.75rem 1rem" }}>
+            <span>⚠️ {deleteError}</span>
+            <button type="button" onClick={() => setDeleteError("")} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#ff8a8c", fontSize: "1.1rem", cursor: "pointer" }}>×</button>
+          </div>
+        )}
 
         {loadError ? (
           <div className="text-center py-5">
