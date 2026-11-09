@@ -21,6 +21,8 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     location = db.Column(db.String(200), nullable=True)
     role = db.Column(db.String(50), default="user")  # user | moderator | editor | admin
+    # Fecha de alta. Los usuarios anteriores a esta columna quedan en NULL (no se inventa la fecha).
+    created_at = db.Column(db.DateTime, nullable=True, default=datetime.utcnow)
     # Perfil: forma del avatar y redes sociales
     profile_shape = db.Column(db.String(20), nullable=True, default="circle")
     social_twitter = db.Column(db.String(255), nullable=True)
@@ -72,6 +74,7 @@ class User(db.Model):
                 "facebook": self.social_facebook or "",
                 "website": self.social_website or "",
             },
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -123,6 +126,8 @@ class Post(db.Model):
             "author": author,
             "images": [img.serialize() for img in self.images],
             "status": self.status,
+            "views": self.views or 0,
+            "likes_count": self.likes.count(),
         }
 
 
@@ -151,11 +156,14 @@ class Comment(db.Model):
     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
+    author = db.relationship("User", lazy="joined")
+
     def serialize(self):
         return {
             "id": self.id,
             "content": self.content,
             "author_name": self.author_name,
+            "author_pic": self.author.profile_pic if self.author else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "post_id": self.post_id,
             "user_id": self.user_id

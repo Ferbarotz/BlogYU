@@ -6,6 +6,22 @@ import { API_BASE } from "../api/backend";
 const C_START = "#00f2fe";
 const C_END = "#4facfe";
 
+// Avatar: foto de perfil si existe; si no, la inicial
+const Avatar = ({ pic, name, size }) => (
+  pic ? (
+    <img src={pic} alt={name || "Avatar"} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: `1px solid ${C_START}55` }} />
+  ) : (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", flexShrink: 0,
+      background: `linear-gradient(135deg, ${C_START}, ${C_END})`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: `calc(${size} / 2.2)`, fontWeight: "700", color: "#000"
+    }}>
+      {(name || "?")[0].toUpperCase()}
+    </div>
+  )
+);
+
 const PostDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -20,6 +36,17 @@ const PostDetail = () => {
   const user = JSON.parse(localStorage.getItem("user") || "null");
   const isLoggedIn = !!user; // true si hay sesión activa
   const [commentError, setCommentError] = useState("");
+  const [likesCount, setLikesCount] = useState(0);
+  const [likedByMe, setLikedByMe] = useState(false);
+  const [likeBusy, setLikeBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [commentActionError, setCommentActionError] = useState("");
+
+  const authHeader = () => {
+    const t = localStorage.getItem("token");
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  };
 
   const getImages = (data) => {
     if (!data) return [];
@@ -50,12 +77,18 @@ const PostDetail = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [pRes, cRes] = await Promise.all([
+        const [pRes, cRes, lRes] = await Promise.all([
           fetch(`${API_BASE}/api/posts/${id}`),
-          fetch(`${API_BASE}/api/posts/${id}/comments`)
+          fetch(`${API_BASE}/api/posts/${id}/comments`),
+          fetch(`${API_BASE}/api/posts/${id}/likes`, { headers: authHeader() })
         ]);
         if (pRes.ok) setPost(await pRes.json());
         if (cRes.ok) setComments(await cRes.json());
+        if (lRes.ok) {
+          const l = await lRes.json();
+          setLikesCount(l.likes_count || 0);
+          setLikedByMe(!!l.liked_by_me);
+        }
       } catch (err) { console.error(err); }
       finally { setLoading(false); }
     };
@@ -88,6 +121,71 @@ const PostDetail = () => {
     } catch (err) {
       console.error(err);
       setCommentError("Error de conexión. Inténtalo de nuevo.");
+    }
+  };
+
+  // Like con actualización optimista; se revierte si falla
+  const handleLike = async () => {
+    if (!isLoggedIn) { navigate("/login"); return; }
+    if (likeBusy) return;
+    const prevLiked = likedByMe, prevCount = likesCount;
+    setLikedByMe(!prevLiked);
+    setLikesCount(prevCount + (prevLiked ? -1 : 1));
+    setLikeBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/posts/${id}/like`, { method: "POST", headers: authHeader() });
+      if (res.status === 401) {
+        setLikedByMe(prevLiked); setLikesCount(prevCount);
+        navigate("/login");
+        return;
+      }
+      if (!res.ok) throw new Error("like");
+      const data = await res.json();
+      if (typeof data.likes_count === "number") setLikesCount(data.likes_count);
+    } catch (err) {
+      setLikedByMe(prevLiked); setLikesCount(prevCount);
+    } finally {
+      setLikeBusy(false);
+    }
+  };
+
+  const startEdit = (c) => { setEditingId(c.id); setEditText(c.content); setCommentActionError(""); };
+  const cancelEdit = () => { setEditingId(null); setEditText(""); };
+
+  const saveEdit = async (c) => {
+    if (!editText.trim()) { setCommentActionError("El comentario no puede estar vacío"); return; }
+    setCommentActionError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/posts/${id}/comments/${c.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ content: editText })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCommentActionError(res.status === 401 ? "Tu sesión ha expirado, vuelve a iniciar sesión" : (data.msg || "No se pudo editar el comentario"));
+        return;
+      }
+      setComments(prev => prev.map(x => (x.id === c.id ? { ...x, ...data } : x)));
+      cancelEdit();
+    } catch (err) {
+      setCommentActionError("Error de conexión. Inténtalo de nuevo.");
+    }
+  };
+
+  const deleteComment = async (c) => {
+    if (!window.confirm("¿Borrar este comentario?")) return;
+    setCommentActionError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/posts/${id}/comments/${c.id}`, { method: "DELETE", headers: authHeader() });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCommentActionError(res.status === 401 ? "Tu sesión ha expirado, vuelve a iniciar sesión" : (data.msg || "No se pudo borrar el comentario"));
+        return;
+      }
+      setComments(prev => prev.filter(x => x.id !== c.id));
+    } catch (err) {
+      setCommentActionError("Error de conexión. Inténtalo de nuevo.");
     }
   };
 
@@ -207,19 +305,33 @@ const PostDetail = () => {
                   </div>
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={handleLike}
+                disabled={likeBusy}
+                title={isLoggedIn ? (likedByMe ? "Quitar me gusta" : "Me gusta") : "Inicia sesión para dar me gusta"}
+                style={{
+                  background: likedByMe ? "rgba(255,78,80,0.18)" : "rgba(255,78,80,0.06)",
+                  border: `1px solid ${likedByMe ? "rgba(255,78,80,0.6)" : "rgba(255,78,80,0.3)"}`,
+                  borderRadius: "12px", padding: "8px 14px", display: "flex", alignItems: "center", gap: "8px",
+                  cursor: "pointer", color: "inherit"
+                }}
+              >
+                <span style={{ fontSize: "1.2rem" }}>{likedByMe ? "❤️" : "🤍"}</span>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontSize: "1rem", fontWeight: "700", color: "#ff6b6d", lineHeight: "1.2" }}>{likesCount}</div>
+                  <div style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    {likesCount === 1 ? "Me gusta" : "Me gustas"}
+                  </div>
+                </div>
+              </button>
             </div>
 
             {/* Autor */}
             {post.author && (
               <div className="d-flex align-items-center gap-3 pt-3" style={{ borderTop: "1px solid rgba(0,242,254,0.2)" }}>
-                <div style={{
-                  width: "48px", height: "48px", borderRadius: "50%",
-                  background: `linear-gradient(135deg, ${C_START}, ${C_END})`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "1.5rem", fontWeight: "700", color: "#000"
-                }}>
-                  {(post.author.name || post.author.email || '?')[0].toUpperCase()}
-                </div>
+                <Avatar pic={post.author.profile_pic} name={post.author.name || post.author.email} size="48px" />
                 <div>
                   <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px" }}>
                     Escrito por
@@ -328,7 +440,16 @@ const PostDetail = () => {
             </span>
           </h5>
 
-          {comments.map(c => (
+          {commentActionError && (
+            <div style={{ background: "rgba(255,78,80,0.1)", border: "1px solid rgba(255,78,80,0.4)", color: "#ff8a8c", borderRadius: "12px", padding: "0.6rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+              ⚠️ {commentActionError}
+            </div>
+          )}
+
+          {comments.map(c => {
+            const isMine = isLoggedIn && c.user_id != null && String(c.user_id) === String(user?.id);
+            const isEditing = editingId === c.id;
+            return (
             <div key={c.id} style={{
               background: `linear-gradient(135deg, rgba(0,242,254,0.04) 0%, rgba(79,172,254,0.04) 100%)`,
               border: "1px solid rgba(0,242,254,0.2)",
@@ -337,13 +458,47 @@ const PostDetail = () => {
               marginBottom: "1rem",
               boxShadow: "0 4px 12px rgba(0,0,0,0.25)"
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem", color: "rgba(255,255,255,0.5)" }}>
-                <strong style={{ color: C_START }}>{c.author_name}</strong>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", color: "rgba(255,255,255,0.5)", gap: "8px" }}>
+                <div className="d-flex align-items-center gap-2">
+                  <Avatar pic={c.author_pic} name={c.author_name} size="28px" />
+                  <strong style={{ color: C_START }}>{c.author_name}</strong>
+                </div>
                 <small>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}</small>
               </div>
-              <p style={{ margin: 0, color: "rgba(255,255,255,0.85)" }}>{c.content}</p>
+              {isEditing ? (
+                <>
+                  <textarea
+                    className="form-control mb-2"
+                    rows="3"
+                    value={editText}
+                    onChange={e => setEditText(e.target.value)}
+                    style={{ resize: "vertical", background: "rgba(0,0,0,0.25)", color: "#fff", border: "1px solid rgba(0,242,254,0.25)" }}
+                  />
+                  <div className="d-flex gap-2 justify-content-end">
+                    <button type="button" onClick={cancelEdit} className="btn btn-sm" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", borderRadius: "8px" }}>
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={() => saveEdit(c)} className="btn btn-sm fw-bold" style={{ background: `linear-gradient(135deg, ${C_START} 0%, ${C_END} 100%)`, border: "none", color: "#000", borderRadius: "8px" }}>
+                      Guardar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p style={{ margin: 0, color: "rgba(255,255,255,0.85)", whiteSpace: "pre-wrap" }}>{c.content}</p>
+              )}
+              {isMine && !isEditing && (
+                <div className="d-flex gap-3 justify-content-end mt-2" style={{ fontSize: "0.8rem" }}>
+                  <button type="button" onClick={() => startEdit(c)} style={{ background: "none", border: "none", color: C_START, padding: 0, cursor: "pointer" }}>
+                    ✏️ Editar
+                  </button>
+                  <button type="button" onClick={() => deleteComment(c)} style={{ background: "none", border: "none", color: "#ff6b6d", padding: 0, cursor: "pointer" }}>
+                    🗑️ Borrar
+                  </button>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
 
           {comments.length === 0 && (
             <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
