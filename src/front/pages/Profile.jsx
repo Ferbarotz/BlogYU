@@ -60,7 +60,7 @@ const IconWebsite = () => (
   </svg>
 );
 
-// ── Mensaje en pantalla (sustituye a alert()) ──
+// ── Mensaje en pantalla (en lugar de la alerta nativa del navegador) ──
 const FeedbackMessage = ({ feedback, onClose }) => {
   if (!feedback) return null;
   const ok = feedback.type === "success";

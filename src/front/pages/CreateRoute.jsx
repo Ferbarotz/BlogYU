@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../utils/backend';
 import { compressImage } from '../utils/imageCompression';
 import UploadProgress from '../components/UploadProgress';
+import Toast from "../components/Toast";
+import useToast from "../utils/useToast";
 
 const MAX_PHOTOS_PER_EXP = 10;
 
@@ -170,6 +172,7 @@ function PlaceSearchInput({ value, onChange, placeholder, inputStyle }) {
 // ----------- Componente principal -----------
 const CreateRoute = () => {
   const navigate = useNavigate();
+  const { toasts, showToast, dismissToast } = useToast();
   const [routeData, setRouteData] = useState({
     title: '',
     destination: '',
@@ -276,7 +279,7 @@ const CreateRoute = () => {
         xhr.onerror = () => reject(new Error('Error de red'));
         xhr.send(formData);
       }).catch(err => {
-        alert(`Error subiendo ${file.name}: ${err.message}`);
+        showToast(`Error subiendo ${file.name}: ${err.message}`, 'error');
       });
     }
 
@@ -298,9 +301,9 @@ const CreateRoute = () => {
   // ---- Submit: al publicar redirige al detalle de la ruta ----
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!routeData.title.trim()) return alert('Título requerido');
-    if (!routeData.destination.trim()) return alert('Destino requerido');
-    if (!experiences.length) return alert('Añade al menos una experiencia');
+    if (!routeData.title.trim()) return showToast('Título requerido', 'error');
+    if (!routeData.destination.trim()) return showToast('Destino requerido', 'error');
+    if (!experiences.length) return showToast('Añade al menos una experiencia', 'error');
 
     setLoading(true);
     try {
@@ -324,11 +327,11 @@ const CreateRoute = () => {
         }
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(`Error: ${err.msg || 'No se pudo guardar la ruta'}`);
+        showToast(`Error: ${err.msg || 'No se pudo guardar la ruta'}`, 'error');
       }
     } catch (err) {
       console.error(err);
-      alert('Error de conexión. Intenta de nuevo.');
+      showToast('Error de conexión. Intenta de nuevo.', 'error');
     } finally {
       setLoading(false);
     }
@@ -336,6 +339,7 @@ const CreateRoute = () => {
 
   return (
     <div style={{ background: '#0d1117', minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+      <Toast toasts={toasts} onDismiss={dismissToast} />
       {/* HEADER */}
       <div
         className="text-center text-white"
