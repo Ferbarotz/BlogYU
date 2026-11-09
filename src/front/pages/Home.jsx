@@ -22,6 +22,10 @@ const Home = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Aviso en pantalla (sustituye a alert()). Puede llegar por navegación, p. ej. desde NewPost.
+  const [notice, setNotice] = useState(location.state?.notice || null); // { type, text }
+  const notify = (type, text) => setNotice({ type, text });
+
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "null");
 
@@ -264,7 +268,7 @@ const Home = () => {
 
   const handleSetPreviewFromUrl = () => {
     const url = (urlInputRef.current.value || "").trim();
-    if (!url) return alert("Introduce una URL válida.");
+    if (!url) return notify("error", "Introduce una URL válida.");
     setPreviewBg(url);
     fileInputRef.current._selectedFile = null;
   };
@@ -282,13 +286,14 @@ const Home = () => {
   };
 
   const handleUploadHomeBackground = async () => {
-    if (!isAdmin) return alert("Solo administradores pueden cambiar el fondo.");
+    if (!isAdmin) return notify("error", "Solo administradores pueden cambiar el fondo.");
     const selectedFile = fileInputRef.current._selectedFile;
     const imageUrl = (urlInputRef.current.value || "").trim();
 
-    if (!selectedFile && !imageUrl) return alert("Selecciona archivo o pega URL.");
+    if (!selectedFile && !imageUrl) return notify("error", "Selecciona un archivo o pega una URL.");
 
     setUploadingBg(true);
+    setNotice(null);
 
     try {
       const tokenLocal = localStorage.getItem("token");
@@ -310,7 +315,7 @@ const Home = () => {
         } catch {}
 
         if (!uploadRes.ok) {
-          alert("Error subiendo imagen: " + (data?.msg || txt || uploadRes.status));
+          notify("error", "Error subiendo imagen: " + (data?.msg || txt || uploadRes.status));
           setUploadingBg(false);
           return;
         }
@@ -325,7 +330,7 @@ const Home = () => {
         fileInputRef.current._selectedFile = null;
         setAdminEditing(false);
         if (window.refreshGlobalHomeBg) window.refreshGlobalHomeBg();
-        alert("Fondo del Home actualizado.");
+        notify("success", "Fondo del Home actualizado.");
       } else {
         const setRes = await fetch(`${API_BASE}/api/admin/settings/home_background`, {
           method: "POST",
@@ -343,7 +348,7 @@ const Home = () => {
         } catch {}
 
         if (!setRes.ok) {
-          alert("Error guardando la URL: " + (data?.msg || txt || setRes.status));
+          notify("error", "Error guardando la URL: " + (data?.msg || txt || setRes.status));
           setUploadingBg(false);
           return;
         }
@@ -358,11 +363,11 @@ const Home = () => {
         if (urlInputRef.current) urlInputRef.current.value = "";
         setAdminEditing(false);
         if (window.refreshGlobalHomeBg) window.refreshGlobalHomeBg();
-        alert("Fondo del Home actualizado (URL).");
+        notify("success", "Fondo del Home actualizado (URL).");
       }
     } catch (err) {
       console.error("Error guardando home background:", err);
-      alert("Error de conexión al guardar el fondo.");
+      notify("error", "Error de conexión al guardar el fondo.");
     } finally {
       setUploadingBg(false);
     }
@@ -377,6 +382,22 @@ const Home = () => {
 
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh" }}>
+      {notice && (
+        <div role={notice.type === "success" ? "status" : "alert"} style={{
+          position: "fixed", top: "84px", left: "50%", transform: "translateX(-50%)",
+          zIndex: 2000, width: "min(92vw, 560px)",
+          display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px",
+          background: notice.type === "success" ? "rgba(20,40,30,0.96)" : "rgba(45,20,22,0.96)",
+          border: `1px solid ${notice.type === "success" ? "rgba(46,204,113,0.5)" : "rgba(255,78,80,0.45)"}`,
+          color: notice.type === "success" ? "#9ff0c1" : "#ffb6b6",
+          borderRadius: "12px", padding: "0.7rem 1rem", fontSize: "0.9rem",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
+        }}>
+          <span>{notice.type === "success" ? "✅" : "⚠️"} {notice.text}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Cerrar"
+            style={{ background: "none", border: "none", color: "inherit", fontSize: "1.1rem", cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+      )}
       <div
         className="text-center text-white"
         style={{

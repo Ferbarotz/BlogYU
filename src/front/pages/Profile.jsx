@@ -6,8 +6,8 @@ import { API_BASE } from "../api/backend";
 const handleExpiredSession = (navigate) => {
   localStorage.removeItem("token");
   localStorage.removeItem("user");
-  alert("Tu sesión ha expirado. Por favor inicia sesión nuevamente.");
-  if (navigate) navigate("/login");
+  const msg = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+  if (navigate) navigate("/login", { state: { msg } });
   else window.location.href = "/login";
 };
 
@@ -59,6 +59,26 @@ const IconWebsite = () => (
     <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
   </svg>
 );
+
+// ── Mensaje en pantalla (sustituye a alert()) ──
+const FeedbackMessage = ({ feedback, onClose }) => {
+  if (!feedback) return null;
+  const ok = feedback.type === "success";
+  return (
+    <div role={ok ? "status" : "alert"} style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px",
+      background: ok ? "rgba(46,204,113,0.12)" : "rgba(255,78,80,0.12)",
+      border: `1px solid ${ok ? "rgba(46,204,113,0.4)" : "rgba(255,78,80,0.3)"}`,
+      color: ok ? "#9ff0c1" : "#ffb6b6",
+      borderRadius: "12px", padding: "0.6rem 1rem", fontSize: "0.88rem",
+      margin: "12px auto 0", maxWidth: "520px", textAlign: "left"
+    }}>
+      <span>{ok ? "✅" : "⚠️"} {feedback.text}</span>
+      <button type="button" onClick={onClose} aria-label="Cerrar"
+        style={{ background: "none", border: "none", color: "inherit", fontSize: "1.1rem", cursor: "pointer", lineHeight: 1 }}>×</button>
+    </div>
+  );
+};
 
 const buildSocialUrl = (platform, value) => {
   if (!value) return null;
@@ -116,6 +136,10 @@ const Profile = () => {
     twitter: "", instagram: "", tiktok: "", facebook: "", website: ""
   });
   const [saving, setSaving] = useState(false);
+  // { area: "hero" | "profile", type: "success" | "error", text }
+  const [feedback, setFeedback] = useState(null);
+  const notify = (area, type, text) => setFeedback({ area, type, text });
+  const clearFeedback = () => setFeedback(null);
 
   const socialConfig = [
     { key: "instagram", label: "Instagram", icon: <IconInstagram />, color: "#E1306C" },
@@ -167,6 +191,7 @@ const Profile = () => {
     const formData = new FormData();
     formData.append("background", file);
     setUploadingBg(true);
+    clearFeedback();
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE}/api/users/${user.id}/background`, {
@@ -186,13 +211,13 @@ const Profile = () => {
           setUser(merged);
           saveUserToStorage(merged);
         } else { fetchUser(); }
-        alert("Fondo actualizado.");
+        notify("hero", "success", "Fondo actualizado.");
       } else {
         const errorData = await response.json().catch(() => ({}));
-        alert("Error: " + (errorData.msg || "No se pudo subir la imagen"));
+        notify("hero", "error", "Error: " + (errorData.msg || "No se pudo subir la imagen"));
       }
     } catch (error) {
-      alert("Error de conexión con el servidor");
+      notify("hero", "error", "Error de conexión con el servidor.");
     } finally { setUploadingBg(false); }
   };
 
@@ -202,6 +227,7 @@ const Profile = () => {
     setSelectedProfileFile(file);
     setPreviewProfilePic(URL.createObjectURL(file));
     setUploadingProfile(true);
+    clearFeedback();
     const fd = new FormData();
     fd.append("profile", file);
     const token = localStorage.getItem("token");
@@ -224,12 +250,12 @@ const Profile = () => {
           setSelectedProfileFile(null);
           setPreviewProfilePic(null);
         } else { await fetchUser(); }
-        alert("Foto de perfil actualizada.");
+        notify("profile", "success", "Foto de perfil actualizada.");
       } else {
-        alert("Error subiendo avatar: " + ((data && (data.msg || data.error)) || `Status ${res.status}`));
+        notify("profile", "error", "Error subiendo avatar: " + ((data && (data.msg || data.error)) || `Status ${res.status}`));
       }
     } catch (err) {
-      alert("Error de red subiendo avatar.");
+      notify("profile", "error", "Error de red subiendo avatar.");
     } finally { setUploadingProfile(false); }
   };
 
@@ -242,8 +268,9 @@ const Profile = () => {
   };
 
   const handleSaveProfile = async () => {
-    if (!user || !user.id) { alert("Usuario no encontrado."); return; }
+    if (!user || !user.id) { notify("profile", "error", "Usuario no encontrado."); return; }
     setSaving(true);
+    clearFeedback();
     try {
       const token = localStorage.getItem("token");
       let updatedUser = { ...(user || {}) };
@@ -259,7 +286,7 @@ const Profile = () => {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
             body: fd,
           });
-        } catch { alert("Error de red subiendo la foto de perfil."); setUploadingProfile(false); setSaving(false); return; }
+        } catch { notify("profile", "error", "Error de red subiendo la foto de perfil."); setUploadingProfile(false); setSaving(false); return; }
 
         if (uploadRes.status === 401) { handleExpiredSession(navigate); setUploadingProfile(false); setSaving(false); return; }
 
@@ -281,7 +308,7 @@ const Profile = () => {
             updatedUser = JSON.parse(localStorage.getItem("user") || "null") || updatedUser;
           }
         } else {
-          alert("Error subiendo la foto de perfil: " + (upData?.msg || upData?.error || uploadRes.status));
+          notify("profile", "error", "Error subiendo la foto de perfil: " + (upData?.msg || upData?.error || uploadRes.status));
           setUploadingProfile(false); setSaving(false); return;
         }
         setUploadingProfile(false);
@@ -332,13 +359,13 @@ const Profile = () => {
         setSelectedProfileFile(null);
         setPreviewProfilePic(null);
         await fetchUser();
-        alert("Perfil actualizado correctamente.");
+        notify("profile", "success", "Perfil actualizado correctamente.");
       } else {
-        alert("Error al guardar el perfil: " + (patchData?.msg || patchData?.error || patchText || `Status ${patchRes.status}`));
+        notify("profile", "error", "Error al guardar el perfil: " + (patchData?.msg || patchData?.error || patchText || `Status ${patchRes.status}`));
       }
     } catch (err) {
       console.error("Error guardando perfil:", err);
-      alert("Error de conexión al guardar el perfil.");
+      notify("profile", "error", "Error de conexión al guardar el perfil.");
     } finally { setSaving(false); }
   };
 
@@ -351,10 +378,10 @@ const Profile = () => {
     ? `url(${previewProfilePic}) center/cover no-repeat`
     : user?.profilePic ? `url(${normalizeUrl(user.profilePic)}) center/cover no-repeat`
     : user?.profile_pic ? `url(${normalizeUrl(user.profile_pic)}) center/cover no-repeat`
-    : user?.background ? `url(${normalizeUrl(user.background)}) center/cover no-repeat`
     : "linear-gradient(135deg,#00f2fe,#4facfe)";
-  const avatarInitial = !previewProfilePic && !user?.profilePic && !user?.profile_pic && !user?.background
-    ? (user?.name ? user.name.charAt(0).toUpperCase() : "?")
+  // Sin foto de perfil: inicial del nombre sobre el degradado (igual que Avatar en PostDetail)
+  const avatarInitial = !previewProfilePic && !user?.profilePic && !user?.profile_pic
+    ? (user?.name ? user.name.trim().charAt(0).toUpperCase() : "?")
     : null;
 
   if (!user) return <div style={{ color: "#fff", padding: 20 }}>Cargando perfil...</div>;
@@ -410,6 +437,7 @@ const Profile = () => {
               }}>
               {uploadingBg ? <><span className="spinner-border spinner-border-sm me-2"></span>Subiendo...</> : "📷 Cambiar imagen de fondo"}
             </button>
+            {feedback?.area === "hero" && <FeedbackMessage feedback={feedback} onClose={clearFeedback} />}
           </>
         )}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "1px", background: "linear-gradient(to right, transparent, #00f2fe, transparent)" }} />
@@ -519,6 +547,7 @@ const Profile = () => {
                       📝 Ver mis publicaciones
                     </Link>
                   </div>
+                  {feedback?.area === "profile" && <FeedbackMessage feedback={feedback} onClose={clearFeedback} />}
                 </>
               ) : (
                 <div>
