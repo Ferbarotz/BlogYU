@@ -268,6 +268,29 @@ def _is_valid_image_content(file_obj):
         return False
 
 
+_MIME_TO_EXT = {
+    'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/pjpeg': 'jpg',
+    'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+}
+
+
+def _ensure_image_extension(file_obj, index=0):
+    """Si el nombre no tiene una extension valida (p. ej. "blob" de un Blob
+    comprimido en el navegador), la deriva del mimetype. Modifica file_obj.filename."""
+    name = (getattr(file_obj, 'filename', '') or '').strip()
+    ext = name.rsplit('.', 1)[1].lower() if '.' in name else ''
+    if ext in ALLOWED_EXT:
+        return name
+    mimetype = (getattr(file_obj, 'mimetype', '') or '').lower().strip()
+    derived = _MIME_TO_EXT.get(mimetype)
+    if not derived:
+        return name
+    base = name.rsplit('.', 1)[0] if '.' in name else name
+    base = secure_filename(base) or f"foto_{index}"
+    file_obj.filename = f"{base}.{derived}"
+    return file_obj.filename
+
+
 def allowed_file(filename, file_obj=None):
     """Lista blanca estricta por extensión + MIME + contenido real."""
     if not filename or '.' not in filename:
@@ -725,6 +748,7 @@ def get_post(post_id):
 def create_post():
     user_id = int(get_jwt_identity())
     saved_urls = []
+    images_rejected = 0
 
     if request.is_json:
         data = request.get_json(silent=True) or {}
@@ -741,13 +765,16 @@ def create_post():
         for i, image_file in enumerate(request.files.getlist('images')):
             if not image_file or image_file.filename == "":
                 continue
-            if not allowed_file(image_file.filename, image_file):
-                continue
-            if not _file_size_ok(image_file):
+            _ensure_image_extension(image_file, i)
+            if not allowed_file(image_file.filename, image_file) or not _file_size_ok(image_file):
+                current_app.logger.warning("Imagen rechazada en create_post: %s (%s)", image_file.filename, image_file.mimetype)
+                images_rejected += 1
                 continue
             url = upload_to_cloudinary(image_file, folder="blogyu/posts")
             if url:
                 saved_urls.append(url)
+            else:
+                images_rejected += 1
 
     if not all(isinstance(v, (str, type(None))) for v in (title, content, category)):
         return jsonify({"msg": "title, content y category deben ser texto"}), 400
@@ -777,7 +804,8 @@ def create_post():
         db.session.add(PostImage(url=url, order=order, post_id=p.id))
 
     db.session.commit()
-    return jsonify({"msg": "Post creado", "post": p.serialize(), "id": p.id}), 201
+    return jsonify({"msg": "Post creado", "post": p.serialize(), "id": p.id,
+                    "images_rejected": images_rejected}), 201
 
 @api.route('/posts/<int:post_id>/stats', methods=['GET'])
 def post_stats(post_id):
@@ -821,6 +849,7 @@ def get_post_likes(post_id):
 @api.route('/posts/<int:post_id>', methods=['PUT'])
 @jwt_required()
 def update_post(post_id):
+    images_rejected = 0
     user_id = int(get_jwt_identity())
     p = Post.query.get_or_404(post_id)
     if p.user_id != user_id:
@@ -881,13 +910,16 @@ def update_post(post_id):
         if new_files:
             current_count = PostImage.query.filter_by(post_id=p.id).count()
             for i, image_file in enumerate(new_files):
-                if not allowed_file(image_file.filename, image_file):
-                    continue
-                if not _file_size_ok(image_file):
+                _ensure_image_extension(image_file, i)
+                if not allowed_file(image_file.filename, image_file) or not _file_size_ok(image_file):
+                    current_app.logger.warning("Imagen rechazada en update_post: %s (%s)", image_file.filename, image_file.mimetype)
+                    images_rejected += 1
                     continue
                 url = upload_to_cloudinary(image_file, folder="blogyu/posts")
                 if url:
                     db.session.add(PostImage(url=url, order=current_count + i, post_id=p.id))
+                else:
+                    images_rejected += 1
 
         db.session.flush()
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
@@ -910,7 +942,9 @@ def update_post(post_id):
     # Borrado irreversible en Cloudinary SOLO tras confirmar la BD
     for url in urls_to_destroy:
         _destroy_cloudinary_image(url)
-    return jsonify(p.serialize()), 200
+    result = p.serialize()
+    result["images_rejected"] = images_rejected
+    return jsonify(result), 200
 
 @api.route('/posts/<int:post_id>', methods=['DELETE'])
 @jwt_required()
