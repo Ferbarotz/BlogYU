@@ -889,15 +889,24 @@ def update_post(post_id):
         p.content = request.form.get("content") or p.content
         p.category = request.form.get("category") or p.category
 
+        # Un string "[]" no es vacio: entra aqui e implica "quitar todas".
         keep_ids_raw = request.form.get("keep_image_ids")
         if keep_ids_raw:
             try:
-                keep_ids = json.loads(keep_ids_raw)
+                parsed = json.loads(keep_ids_raw)
             except Exception:
-                keep_ids = []
+                parsed = []
+            keep_ids = set()
+            for v in (parsed if isinstance(parsed, list) else []):
+                try:
+                    keep_ids.add(int(v))
+                except (TypeError, ValueError):
+                    pass
 
             for img in list(p.images):
                 if img.id not in keep_ids:
+                    if img.url and "/res.cloudinary.com" in img.url:
+                        urls_to_destroy.append(img.url)
                     try:
                         old_path = os.path.join(current_app.instance_path, 'uploads', os.path.basename(img.url))
                         if os.path.exists(old_path):
@@ -922,8 +931,13 @@ def update_post(post_id):
                     images_rejected += 1
 
         db.session.flush()
+        old_cover = p.image
         first_img = PostImage.query.filter_by(post_id=p.id).order_by(PostImage.order.asc()).first()
-        p.image = first_img.url if first_img else p.image
+        p.image = first_img.url if first_img else None
+        # Portada antigua de Cloudinary que ya no pertenece a ninguna imagen restante
+        if old_cover and "/res.cloudinary.com" in old_cover and old_cover not in urls_to_destroy:
+            if not PostImage.query.filter_by(post_id=p.id, url=old_cover).first():
+                urls_to_destroy.append(old_cover)
 
     p.title = (p.title or "").strip()
     p.content = (p.content or "").strip()
@@ -1218,51 +1232,18 @@ def update_user(user_id):
     email_changed = False
 
     try:
-        if 'profileShape' in data:
-            val = data.get('profileShape')
-            if hasattr(user, 'profile_shape'):
-                setattr(user, 'profile_shape', val)
-            else:
-                setattr(user, 'profileShape', val)
-        if 'profile_shape' in data:
-            val = data.get('profile_shape')
-            if hasattr(user, 'profile_shape'):
-                setattr(user, 'profile_shape', val)
-            else:
-                setattr(user, 'profileShape', val)
+        # Forma del avatar: solo 'circle' o 'square' (acepta el alias profileShape)
+        shape = data.get('profile_shape', data.get('profileShape'))
+        if isinstance(shape, str) and shape.strip().lower() in ('circle', 'square'):
+            user.profile_shape = shape.strip().lower()
 
         social = data.get('social')
         if isinstance(social, dict):
-            if hasattr(user, 'social_twitter') or hasattr(user, 'twitter'):
-                if 'twitter' in social:
-                    if hasattr(user, 'social_twitter'):
-                        user.social_twitter = social.get('twitter')
-                    elif hasattr(user, 'twitter'):
-                        user.twitter = social.get('twitter')
-                if 'instagram' in social:
-                    if hasattr(user, 'social_instagram'):
-                        user.social_instagram = social.get('instagram')
-                    elif hasattr(user, 'instagram'):
-                        user.instagram = social.get('instagram')
-                if 'facebook' in social:
-                    if hasattr(user, 'social_facebook'):
-                        user.social_facebook = social.get('facebook')
-                    elif hasattr(user, 'facebook'):
-                        user.facebook = social.get('facebook')
-                if 'website' in social:
-                    if hasattr(user, 'social_website'):
-                        user.social_website = social.get('website')
-                    elif hasattr(user, 'website'):
-                        user.website = social.get('website')
-            else:
-                if hasattr(user, 'social') and (getattr(user, 'social') is None or isinstance(getattr(user, 'social'), dict)):
-                    existing = getattr(user, 'social') or {}
-                    existing.update(social)
-                    setattr(user, 'social', existing)
-                elif hasattr(user, 'meta') and (getattr(user, 'meta') is None or isinstance(getattr(user, 'meta'), dict)):
-                    existing = getattr(user, 'meta') or {}
-                    existing.setdefault('social', {}).update(social)
-                    setattr(user, 'meta', existing)
+            for net in ('twitter', 'instagram', 'tiktok', 'facebook', 'website'):
+                if net in social:
+                    val = social.get(net)
+                    val = str(val).strip()[:255] if val is not None else ''
+                    setattr(user, f'social_{net}', val or None)
 
         if 'name' in data and hasattr(user, 'name'):
             new_name = (data.get('name') or '').strip()
@@ -1718,6 +1699,20 @@ def admin_delete_user(user_id):
     if user_id == int(get_jwt_identity()):
         return jsonify({"msg": "No puedes eliminar tu propia cuenta de admin"}), 400
     user = User.query.get_or_404(user_id)
+    # 0) URLs de Cloudinary a borrar tras confirmar la BD (posts, rutas, avatar, fondo)
+    urls_to_destroy = []
+    def _add(url):
+        if url and "/res.cloudinary.com" in url and url not in urls_to_destroy:
+            urls_to_destroy.append(url)
+    for post in user.posts:
+        _add(post.image)
+        for img in post.images:
+            _add(img.url)
+    for route in user.routes:
+        for url in _route_image_urls(route):
+            _add(url)
+    _add(user.profile_pic)
+    _add(user.background)
     # 1) Comentarios de cualquier autor en los posts del usuario
     post_ids = [pid for (pid,) in db.session.query(Post.id).filter_by(user_id=user_id).all()]
     if post_ids:
@@ -1728,6 +1723,8 @@ def admin_delete_user(user_id):
     Like.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     db.session.delete(user)
     db.session.commit()
+    for url in urls_to_destroy:
+        _destroy_cloudinary_image(url)
     return jsonify({"msg": "Usuario eliminado"}), 200
 
 @api.route('/admin/users/<int:user_id>', methods=['PUT'])
@@ -1778,6 +1775,7 @@ def get_user_public(user_id):
         "routes_count": routes_count,
         "likes_given": likes_given,
         "joined_at": user.created_at.isoformat() if hasattr(user, 'created_at') else None,
+        "profile_shape": user.profile_shape or "circle",
         "social": social,
     }), 200
 

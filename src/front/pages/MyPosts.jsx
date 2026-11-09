@@ -7,6 +7,7 @@ const MyPosts = () => {
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -41,22 +42,16 @@ const MyPosts = () => {
           navigate("/login");
           return;
         }
-        if (!res.ok) {
-          const alt = await fetch(`${API_BASE}/api/posts?mine=true`, { headers });
-          if (!alt.ok) throw new Error("No se pudo cargar posts");
-          const altData = await alt.json();
-          if (!mounted) return;
-          const postsArray = Array.isArray(altData) ? altData : (altData.items || altData.posts || []);
-          setPosts(postsArray.map(normalizePostImages));
-        } else {
-          const data = await res.json();
-          if (!mounted) return;
-          const postsArray = Array.isArray(data) ? data : (data.items || data.posts || []);
-          setPosts(postsArray.map(normalizePostImages));
-        }
+        // Sin fallback a /api/posts?mine=true: el backend ignora "mine" y devolvería posts ajenos
+        if (!res.ok) throw new Error(`Error ${res.status} cargando /api/my-posts`);
+        const data = await res.json();
+        if (!mounted) return;
+        const postsArray = Array.isArray(data) ? data : (data.items || data.posts || []);
+        setLoadError(false);
+        setPosts(postsArray.map(normalizePostImages));
       } catch (err) {
         console.error("Error cargando mis posts:", err);
-        if (mounted) setPosts([]);
+        if (mounted) { setPosts([]); setLoadError(true); }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -132,7 +127,20 @@ const MyPosts = () => {
           <div style={{ height: "2px", flex: 1, background: "linear-gradient(to left, transparent, rgba(0,242,254,0.3))" }} />
         </div>
 
-        {posts.length === 0 ? (
+        {loadError ? (
+          <div className="text-center py-5">
+            <p style={{ color: "#ff8a8a", fontSize: "1.1rem" }}>
+              No se pudieron cargar tus publicaciones. Inténtalo de nuevo más tarde.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="btn fw-bold rounded-pill mt-3"
+              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", padding: "10px 30px" }}
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : posts.length === 0 ? (
           <div className="text-center py-5">
             <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1.1rem" }}>
               No tienes publicaciones todavía.
