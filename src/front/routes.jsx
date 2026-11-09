@@ -13,6 +13,7 @@ import RouteDetail from "./pages/RouteDetail";
 import Categorias from "./pages/Categorias";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import VerifyEmail from "./pages/VerifyEmail";
 import Profile from "./pages/Profile";
 import NewPost from "./pages/NewPost";
 import EditPost from "./pages/EditPost";
@@ -42,6 +43,7 @@ export default function AppRoutes() {
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         {/* Posts - públicos */}

@@ -284,6 +284,26 @@ useEffect(() => {
     }
   };
 
+  // Confirmar manualmente el email de un usuario (si no le llega el correo)
+  const handleVerifyUser = async (u) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/${u.id}`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ email_verified: true }),
+      });
+      if (res.ok) {
+        setUsers((prev) => prev.map((usr) => (usr.id === u.id ? { ...usr, email_verified: true } : usr)));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.msg || "Error al verificar el usuario");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al verificar el usuario");
+    }
+  };
+
   // Toggle admin (no modal) - kept as before
   const handleToggleAdmin = async (u) => {
     try {
@@ -740,10 +760,18 @@ useEffect(() => {
                               {u.name}
                             </div>
                           </td>
-                          <td style={{ ...td, color: "rgba(255,255,255,0.5)" }}>{u.email}</td>
+                          <td style={{ ...td, color: "rgba(255,255,255,0.5)" }}>
+                            {u.email}
+                            {u.email_verified === false && (
+                              <span title="Este usuario aún no ha confirmado su email" style={{ marginLeft: "8px", background: "rgba(255,78,80,0.12)", color: "#ff9a9a", border: "1px solid rgba(255,78,80,0.3)", borderRadius: "20px", padding: "2px 8px", fontSize: "0.65rem", fontWeight: "700", whiteSpace: "nowrap" }}>⏳ Sin verificar</span>
+                            )}
+                          </td>
                           <td style={td}><span style={{ background: u.is_admin ? "rgba(249,212,35,0.15)" : "rgba(0,242,254,0.1)", color: u.is_admin ? "#f9d423" : "#00f2fe", border: `1px solid ${u.is_admin ? "rgba(249,212,35,0.4)" : "rgba(0,242,254,0.3)"}`, borderRadius: "20px", padding: "3px 12px", fontSize: "0.7rem", fontWeight: "700" }}>{u.is_admin ? "🛡️ Admin" : "👤 Usuario"}</span></td>
                           <td style={td}>
                             <div style={{ display: "flex", gap: "8px" }}>
+                              {u.email_verified === false && (
+                                <button onClick={() => handleVerifyUser(u)} title="Confirmar el email manualmente" style={{ background: "rgba(0,242,254,0.1)", color: "#00f2fe", border: "1px solid rgba(0,242,254,0.3)", borderRadius: "6px", padding: "4px 10px", fontSize: "0.72rem", cursor: "pointer" }}>Verificar</button>
+                              )}
                               <button onClick={() => handleToggleAdmin(u)} style={{ background: "rgba(249,212,35,0.1)", color: "#f9d423", border: "1px solid rgba(249,212,35,0.3)", borderRadius: "6px", padding: "4px 10px", fontSize: "0.72rem", cursor: "pointer" }}>{u.is_admin ? "Quitar Admin" : "Hacer Admin"}</button>
                               <button onClick={() => openConfirmModal(`¿Eliminar al usuario "${u.name}"? Esta acción no se puede deshacer.`, () => deleteUserConfirmed(u.id), { type: "user", id: u.id })} style={{ background: "rgba(220,53,69,0.1)", color: "#ff6b7a", border: "1px solid rgba(220,53,69,0.3)", borderRadius: "6px", padding: "4px 10px", fontSize: "0.72rem", cursor: "pointer" }}>🗑️</button>
                             </div>

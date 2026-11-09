@@ -13,6 +13,9 @@ class User(db.Model):
     password_hash = db.Column('password', db.String(256), nullable=False)
 
     is_active = db.Column(db.Boolean, default=True)
+    # Las cuentas nuevas deben confirmar su email antes de poder iniciar sesión.
+    # (La migración marca como verificados a los usuarios que ya existían.)
+    email_verified = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     background = db.Column(db.String(512), nullable=True)
     profile_pic = db.Column(db.String(512), nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
@@ -48,6 +51,7 @@ class User(db.Model):
             "name": self.name,
             "email": self.email,
             "is_active": self.is_active,
+            "email_verified": bool(self.email_verified),
             "background": self.background,
             "is_admin": self.is_admin,
             "role": self.role,
