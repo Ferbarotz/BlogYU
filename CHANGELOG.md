@@ -11,6 +11,20 @@ infraestructura. Todo parcheado, desplegado en Render y verificado en produccion
 Nota: el historial fue reescrito con git filter-repo (limpieza del tar.gz), por
 lo que los cambios se referencian por mensaje de commit y no por hash.
 
+## 2026-11-09 - Verificacion de email al registrarse
+- Nueva columna `user.email_verified` (migracion `d4e5f6a7b8c9`). Los usuarios
+  que ya existian quedan verificados; las cuentas nuevas nacen sin verificar.
+- `POST /api/register` envia un correo con enlace `/verify-email?token=...`
+  (caduca en 24 h) y ya no permite iniciar sesion hasta confirmar.
+- `POST /api/login` devuelve 403 `EMAIL_NOT_VERIFIED` si la cuenta no esta
+  confirmada (solo tras validar la contrasena).
+- Nuevos endpoints `POST /api/verify-email` y `POST /api/resend-verification`
+  (respuesta generica, 3/min).
+- Cambiar el email desde el perfil obliga a confirmarlo de nuevo. El enlace de
+  reset de contrasena tambien confirma el email. El admin puede verificar a mano.
+- Frontend: pagina `VerifyEmail`, aviso + boton "Reenviar" en registro y login,
+  insignia "Sin verificar" y boton "Verificar" en el panel de admin.
+
 ## Punto 5 - Notificaciones (500 / 404)
 - Problema: los endpoints de notificaciones fallaban (import ausente y
   new_comment.id inexistente al crear la notificacion).

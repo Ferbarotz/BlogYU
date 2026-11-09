@@ -353,6 +353,13 @@ def login():
     if not user or not user.check_password(password):
         return jsonify({"msg": "Credenciales inválidas"}), 401
 
+    # Solo tras validar la contraseña (no revela si el email existe)
+    if not user.email_verified:
+        return jsonify({
+            "msg": "Debes confirmar tu email antes de iniciar sesión. Revisa tu bandeja de entrada (y la carpeta de spam).",
+            "code": "EMAIL_NOT_VERIFIED",
+        }), 403
+
     try:
         token = create_access_token(identity=str(user.id))
     except Exception as e:
@@ -412,15 +419,106 @@ def register():
     if User.query.filter_by(email=email).first():
         return jsonify({"msg": "El usuario ya existe"}), 400
 
-    new_user = User(name=name, email=email)
+    new_user = User(name=name, email=email, email_verified=False)
     new_user.password = password
     db.session.add(new_user)
     db.session.commit()
+
+    email_sent = _send_verification_email(new_user)
+    msg = ("Cuenta creada. Te hemos enviado un correo para confirmar tu email; "
+           "debes confirmarlo antes de iniciar sesión.")
+    if not email_sent:
+        msg = ("Cuenta creada, pero no pudimos enviar el correo de confirmación. "
+               "Inténtalo de nuevo con 'Reenviar correo'.")
+    return jsonify({
+        "msg": msg,
+        "verification_required": True,
+        "email_sent": email_sent,
+        "user": {"id": new_user.id, "name": new_user.name, "email": new_user.email},
+    }), 201
+
+# ----------------- EMAIL VERIFICATION -----------------
+VERIFY_TOKEN_HOURS = 24
+
+def _send_verification_email(user):
+    """Envía el enlace de confirmación. Devuelve True si se envió (o si el envío está suprimido en dev)."""
+    token = create_access_token(
+        identity=str(user.id),  # PyJWT >= 2.10 exige sub string
+        expires_delta=timedelta(hours=VERIFY_TOKEN_HOURS),
+        additional_claims={"purpose": "verify", "email": user.email},
+    )
+    frontend = current_app.config.get('FRONTEND_URL') or os.environ.get('FRONTEND_URL') or 'http://localhost:3000'
+    verify_url = f"{frontend.rstrip('/')}/verify-email?token={token}"
+
+    if current_app.config.get('MAIL_SUPPRESS_SEND'):
+        current_app.logger.warning("MAIL_SUPPRESS_SEND activo; verify_url para %s: %s", user.email, verify_url)
+        return True
+
+    subject = "Confirma tu email - BlogYU"
+    body = (
+        f"Hola {user.name},\n\n"
+        "Gracias por unirte a BlogYU. Para activar tu cuenta confirma tu email en este enlace:\n\n"
+        f"{verify_url}\n\n"
+        f"El enlace caduca en {VERIFY_TOKEN_HOURS} horas. Si no creaste esta cuenta, ignora este correo."
+    )
+    ok, err = send_email_via_sendgrid_api(user.email, subject, body)
+    if ok:
+        current_app.logger.info("Correo de verificación enviado a %s", user.email)
+    else:
+        current_app.logger.error("No se pudo enviar el correo de verificación a %s: %s", user.email, err)
+    return bool(ok)
+
+@api.route('/verify-email', methods=['POST'])
+@limiter.limit("20 per minute")
+def verify_email():
+    body = request.get_json(silent=True) or {}
+    token = (body.get('token') or request.args.get('token') or '').strip()
+    if not token:
+        return jsonify({"msg": "Token requerido"}), 400
+
+    invalid = (jsonify({"msg": "El enlace de confirmación no es válido. Solicita uno nuevo."}), 400)
     try:
-        user_serialized = new_user.serialize()
+        data = _pyjwt.decode(
+            token,
+            current_app.config["JWT_SECRET_KEY"],
+            algorithms=[current_app.config.get("JWT_ALGORITHM", "HS256")],
+        )
+    except _pyjwt.ExpiredSignatureError:
+        return jsonify({"msg": "El enlace de confirmación ha caducado. Solicita uno nuevo.", "code": "EXPIRED"}), 400
     except Exception:
-        user_serialized = {"id": new_user.id, "name": new_user.name, "email": new_user.email}
-    return jsonify({"msg": "Usuario creado con éxito", "user": user_serialized}), 201
+        current_app.logger.info("Token de verificación inválido")
+        return invalid
+
+    if data.get("purpose") != "verify":
+        return invalid
+    try:
+        user = User.query.get(int(data.get("sub")))
+    except (TypeError, ValueError):
+        return invalid
+    # El token solo vale para el email al que se envió (si cambió el email, no sirve)
+    if not user or (user.email or '').lower() != (data.get("email") or '').lower():
+        return invalid
+
+    if user.email_verified:
+        return jsonify({"msg": "Tu email ya estaba confirmado. Ya puedes iniciar sesión.", "already": True}), 200
+
+    user.email_verified = True
+    db.session.commit()
+    return jsonify({"msg": "¡Email confirmado! Ya puedes iniciar sesión."}), 200
+
+@api.route('/resend-verification', methods=['POST'])
+@limiter.limit("3 per minute")
+def resend_verification():
+    email = ((request.get_json(silent=True) or {}).get('email') or '')
+    email = email.strip().lower() if isinstance(email, str) else ''
+    if not email:
+        return jsonify({"msg": "Email requerido"}), 400
+    generic_ok = {"msg": "Si la cuenta existe y no está confirmada, te hemos enviado un nuevo correo."}
+    user = User.query.filter_by(email=email).first()
+    if user and not user.email_verified:
+        _send_verification_email(user)
+    # Respuesta idéntica en todos los casos: no revela si el email está registrado
+    return jsonify(generic_ok), 200
 
 # ----------------- PASSWORD RECOVERY -----------------
 @api.route('/forgot-password', methods=['POST'])
@@ -521,6 +619,8 @@ def reset_password(token=None):
         return jsonify({"msg": "La contrasena no puede superar 128 caracteres"}), 400
     try:
         user.password = new_password
+        # Quien recibe el enlace de reset demuestra que el email es suyo
+        user.email_verified = True
         # Consumir el token: bloquear su jti para que no se reutilice
         db.session.add(TokenBlocklist(jti=jti))
         db.session.commit()
@@ -1081,6 +1181,7 @@ def update_user(user_id):
 
     user = User.query.get_or_404(user_id)
     data = request.get_json(silent=True) or {}
+    email_changed = False
 
     try:
         if 'profileShape' in data:
@@ -1148,9 +1249,15 @@ def update_user(user_id):
             existing = User.query.filter(User.email == new_email, User.id != user.id).first()
             if existing:
                 return jsonify({'msg': 'Ese email ya está en uso'}), 400
-            user.email = new_email
+            if new_email != (user.email or '').lower():
+                user.email = new_email
+                # El nuevo email debe confirmarse (la sesión actual sigue activa)
+                user.email_verified = False
+                email_changed = True
 
         db.session.commit()
+        if email_changed:
+            _send_verification_email(user)
 
         try:
             serialized = user.serialize()
@@ -1158,7 +1265,10 @@ def update_user(user_id):
             current_app.logger.exception("user.serialize() falló, devolviendo campos básicos")
             serialized = {'id': user.id, 'name': getattr(user, 'name', None), 'email': getattr(user, 'email', None)}
 
-        return jsonify({'msg': 'Usuario actualizado', 'user': serialized}), 200
+        msg = 'Usuario actualizado'
+        if email_changed:
+            msg += '. Te enviamos un correo al nuevo email: confírmalo antes de tu próximo inicio de sesión.'
+        return jsonify({'msg': msg, 'user': serialized}), 200
 
     except Exception as exc:
         current_app.logger.exception("Excepción actualizando usuario (PATCH /users/%s)", user_id)
@@ -1600,6 +1710,9 @@ def admin_update_user(user_id):
         user.is_admin = bool(data['is_admin'])
     if 'role' in data:
         user.role = data['role']
+    if 'email_verified' in data:
+        # Permite al admin confirmar manualmente una cuenta (p. ej. si el correo no llega)
+        user.email_verified = bool(data['email_verified'])
     db.session.commit()
     return jsonify(user.serialize()), 200
 

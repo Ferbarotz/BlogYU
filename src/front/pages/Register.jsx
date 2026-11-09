@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE } from '../api/backend';
+import ResendVerification from '../components/ResendVerification';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -9,6 +10,7 @@ const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [message, setMessage] = useState('');
+  const [registered, setRegistered] = useState(null); // { msg, email, emailSent }
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -27,7 +29,13 @@ const Register = () => {
         body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password })
       });
       if (response.ok) {
-        navigate("/login");
+        const data = await response.json().catch(() => ({}));
+        if (data.verification_required) {
+          // La cuenta no se puede usar hasta confirmar el email
+          setRegistered({ msg: data.msg, email: formData.email.trim().toLowerCase(), emailSent: data.email_sent });
+        } else {
+          navigate("/login");
+        }
       } else {
         const errorData = await response.json().catch(() => ({}));
         setMessage(errorData.msg || "No se pudo crear el usuario");
@@ -275,6 +283,18 @@ const Register = () => {
               </div>
 
               {/* ERROR */}
+              {registered && (
+                <div className="mb-3 py-3 px-3 small rounded-3" style={{
+                  background: registered.emailSent ? "rgba(0,242,254,0.08)" : "rgba(249,212,35,0.1)",
+                  border: registered.emailSent ? "1px solid rgba(0,242,254,0.25)" : "1px solid rgba(249,212,35,0.3)",
+                  color: registered.emailSent ? "#bff7ff" : "#f9d423"
+                }}>
+                  {registered.emailSent ? "📧 " : "⚠️ "}{registered.msg}
+                  {registered.emailSent && <div className="mt-1">Enviado a <strong>{registered.email}</strong>. Revisa también la carpeta de spam.</div>}
+                  <ResendVerification email={registered.email} />
+                </div>
+              )}
+
               {message && (
                 <div className="mb-3 py-2 px-3 text-center small rounded-3" style={{
                   background: "rgba(255,78,80,0.15)",

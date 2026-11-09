@@ -2,10 +2,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE } from '../api/backend';
+import ResendVerification from '../components/ResendVerification';
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [message, setMessage] = useState('');
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
@@ -18,6 +20,7 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
+    setNeedsVerification(false);
 
     const tryLogin = async (retries = 3) => {
       try {
@@ -42,7 +45,12 @@ const Login = () => {
           return;
         }
 
-        setMessage('Error: ' + (data.msg || 'Credenciales incorrectas'));
+        if (res.status === 403 && data.code === 'EMAIL_NOT_VERIFIED') {
+          setNeedsVerification(true);
+          setMessage(data.msg);
+        } else {
+          setMessage('Error: ' + (data.msg || 'Credenciales incorrectas'));
+        }
         setLoading(false);
       } catch (error) {
         if (retries > 0) {
@@ -262,6 +270,7 @@ const Login = () => {
                   }}
                 >
                   ⚠️ {message}
+                  {needsVerification && <ResendVerification email={formData.email.trim().toLowerCase()} />}
                 </div>
               )}
 
