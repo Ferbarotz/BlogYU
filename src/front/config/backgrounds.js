@@ -7,8 +7,8 @@
 // Ambos endpoints de subida guardan ya la imagen en Cloudinary (carpeta blogyu/backgrounds).
 //
 // Migración de fondos antiguos: si el fondo de Inicio se subió antes de este cambio,
-// su URL es /api/uploads/... (disco local de Render, que se borra en cada deploy).
-// Vuelve a subirlo desde el panel de admin en Inicio o pega aquí una URL de Cloudinary:
+// su URL era /api/uploads/... (disco local de Render). Esa ruta ya no existe en la API,
+// así que esas URLs no cargan. Vuelve a subirlo desde el panel de admin en Inicio o pega aquí una URL de Cloudinary:
 //   1. Sube la imagen en https://console.cloudinary.com (carpeta blogyu/backgrounds).
 //   2. Copia la "Secure URL" (https://res.cloudinary.com/<cloud>/image/upload/...).
 //   3. Pégala en DEFAULT_HOME_BG_URL.

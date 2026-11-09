@@ -124,10 +124,11 @@ const NewPost = () => {
       });
 
       const rejected = Number(result?.images_rejected || 0);
-      if (rejected > 0) {
-        alert(`El post se ha publicado, pero ${rejected} imagen(es) no se pudieron guardar (formato no válido o demasiado grandes). Puedes añadirlas desde "Editar".`);
-      }
-      navigate("/");
+      // El aviso se muestra en pantalla en Inicio (sin alert() nativo)
+      const notice = rejected > 0
+        ? { type: "error", text: `El post se ha publicado, pero ${rejected} imagen(es) no se pudieron guardar (formato no válido o demasiado grandes). Puedes añadirlas desde "Editar".` }
+        : { type: "success", text: "¡Post publicado!" };
+      navigate("/", { state: { notice } });
     } catch (err) {
       console.error("Error creando post:", err);
       setError("Error de conexión. Intenta de nuevo.");

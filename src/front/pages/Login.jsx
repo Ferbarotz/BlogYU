@@ -1,12 +1,14 @@
 // src/front/pages/Login.jsx
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE } from '../api/backend';
 import ResendVerification from '../components/ResendVerification';
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const [message, setMessage] = useState('');
+  const location = useLocation();
+  // Mensaje recibido al redirigir aquí (p. ej. sesión expirada desde Perfil)
+  const [message, setMessage] = useState(location.state?.msg || '');
   const [needsVerification, setNeedsVerification] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -48,6 +50,8 @@ const Login = () => {
         if (res.status === 403 && data.code === 'EMAIL_NOT_VERIFIED') {
           setNeedsVerification(true);
           setMessage(data.msg);
+        } else if (res.status >= 500) {
+          setMessage(`El servidor no está respondiendo correctamente (error ${res.status}). Inténtalo de nuevo en unos minutos.`);
         } else {
           setMessage('Error: ' + (data.msg || 'Credenciales incorrectas'));
         }

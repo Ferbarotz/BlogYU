@@ -7,7 +7,7 @@ from time import time
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Blueprint, request, jsonify, current_app, send_from_directory
+from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import (create_access_token, jwt_required, get_jwt_identity, get_jwt, verify_jwt_in_request)
 import jwt as _pyjwt
@@ -224,6 +224,23 @@ def _cloudinary_public_id(url):
     return "/".join(parts)
 
 
+def _destroy_post_cloudinary_images(post):
+    """Borra de Cloudinary la portada y la galería de un post, cada URL una sola vez.
+
+    La portada (post.image) suele coincidir con una de post.images; sin
+    deduplicar se llamaba dos veces a destroy para la misma imagen.
+    """
+    urls = []
+    for url in [img.url for img in post.images] + [post.image]:
+        if url and url not in urls:
+            urls.append(url)
+    for url in urls:
+        try:
+            _destroy_cloudinary_image(url)
+        except Exception:
+            current_app.logger.exception("Error eliminando imagen de Cloudinary")
+
+
 def _destroy_cloudinary_image(url):
     """Borra una imagen de Cloudinary usando su public_id real."""
     public_id = _cloudinary_public_id(url)
@@ -382,6 +399,9 @@ def login():
             "msg": "Debes confirmar tu email antes de iniciar sesión. Revisa tu bandeja de entrada (y la carpeta de spam).",
             "code": "EMAIL_NOT_VERIFIED",
         }), 403
+
+    if not user.is_active:
+        return jsonify({"msg": "Tu cuenta está desactivada. Contacta con el administrador."}), 403
 
     try:
         token = create_access_token(identity=str(user.id))
@@ -654,13 +674,6 @@ def reset_password(token=None):
 
     return jsonify({"msg": "Contraseña actualizada correctamente"}), 200
 
-# ----------------- UPLOADS (servir) -----------------
-@api.route('/uploads/<path:filename>', methods=['GET'])
-def uploads(filename):
-    uploads_dir = os.path.join(current_app.instance_path, 'uploads')
-    return send_from_directory(uploads_dir, filename)
-
-
 # ----------------- POSTS -----------------
 @api.route('/upload-step-image', methods=['POST'])
 @jwt_required()
@@ -688,7 +701,8 @@ def get_posts():
     search = request.args.get('search')
     category = request.args.get('category')
 
-    query = Post.query
+    # Los borradores solo los ve su autor (desde /my-posts)
+    query = Post.query.filter(Post.status != 'draft')
     if search:
         # Busqueda case-insensitive con comodines LIKE escapados
         safe = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -725,6 +739,16 @@ def get_user_posts():
 @api.route('/posts/<int:post_id>', methods=['GET'])
 def get_post(post_id):
     post = Post.query.get_or_404(post_id)
+
+    # Solo el dueño puede ver su propio borrador
+    if post.status == "draft":
+        try:
+            verify_jwt_in_request(optional=True)
+            uid = get_jwt_identity()
+        except Exception:
+            uid = None
+        if not uid or int(uid) != post.user_id:
+            return jsonify({"msg": "Post no encontrado"}), 404
 
     # Contador de vistas: +1 por visitante unico por hora (guardia anti-F5 via cookie)
     is_new_view = request.cookies.get(f"viewed_{post_id}") is None
@@ -987,9 +1011,8 @@ def delete_post(post_id):
                 os.remove(old_path)
         except Exception:
             current_app.logger.exception("Error eliminando archivo imagen")
-    # Borrar tambien las imagenes de Cloudinary (public_id real)
-    for img in list(p.images):
-        _destroy_cloudinary_image(img.url)
+    # Borrar de Cloudinary cada URL una sola vez (portada + galería)
+    _destroy_post_cloudinary_images(p)
     PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
 
     # 3. Borrar imagen principal si es local
@@ -1000,12 +1023,6 @@ def delete_post(post_id):
                 os.remove(old_path)
         except Exception:
             current_app.logger.exception("Error eliminando imagen principal")
-    # También eliminar de Cloudinary si es una URL de Cloudinary
-    if p.image and "/res.cloudinary.com" in p.image:
-        try:
-            _destroy_cloudinary_image(p.image)
-        except Exception:
-            current_app.logger.exception("Error eliminando imagen de Cloudinary")
 
     # 4. Borrar el post
     db.session.delete(p)
@@ -1594,8 +1611,8 @@ def set_home_background():
             bg_url = body.get('background') or body.get('url')
             if not bg_url or not isinstance(bg_url, str):
                 return jsonify({"msg": "background URL requerida"}), 400
-            if not (bg_url.lower().startswith("https://") or bg_url.startswith("/api/uploads/")):
-                return jsonify({"msg": "background debe ser una URL https o /api/uploads/..."}), 400
+            if not bg_url.lower().startswith("https://"):
+                return jsonify({"msg": "background debe ser una URL https"}), 400
             try:
                 with open(settings_path, 'w', encoding='utf-8') as f:
                     json.dump({"background": bg_url, "updated_at": datetime.utcnow().isoformat()}, f)
@@ -1640,14 +1657,11 @@ def admin_get_all_posts():
 @admin_required
 def admin_delete_post(post_id):
     p = Post.query.get_or_404(post_id)
-    if p.image:
-        _destroy_cloudinary_image(p.image)
     # Limpieza previa (misma que delete_post): Comment no tiene cascade y
     # dejar comentarios genera ForeignKeyViolation -> 500
     Comment.query.filter_by(post_id=post_id).delete(synchronize_session=False)
-    # Borrar tambien las imagenes de Cloudinary (public_id real)
-    for img in list(p.images):
-        _destroy_cloudinary_image(img.url)
+    # Borrar de Cloudinary cada URL una sola vez (portada + galería)
+    _destroy_post_cloudinary_images(p)
     PostImage.query.filter_by(post_id=post_id).delete(synchronize_session=False)
     db.session.delete(p)
     db.session.commit()
