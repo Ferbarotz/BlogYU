@@ -19,6 +19,7 @@ const PostDetail = () => {
 
   const user = JSON.parse(localStorage.getItem("user") || "null");
   const isLoggedIn = !!user; // true si hay sesión activa
+  const [commentError, setCommentError] = useState("");
 
   const getImages = (data) => {
     if (!data) return [];
@@ -64,6 +65,7 @@ const PostDetail = () => {
   const handleSendComment = async (e) => {
     e.preventDefault();
     if (!newComment.trim()) return;
+    setCommentError("");
     try {
       const res = await fetch(`${API_BASE}/api/posts/${id}/comments`, {
         method: "POST",
@@ -76,8 +78,17 @@ const PostDetail = () => {
       if (res.ok) {
         setComments([...comments, await res.json()]);
         setNewComment("");
+      } else if (res.status === 401) {
+        // No se borra el texto escrito
+        setCommentError("Tu sesión ha expirado, vuelve a iniciar sesión");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setCommentError(data.msg || "No se pudo publicar el comentario. Inténtalo de nuevo.");
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      setCommentError("Error de conexión. Inténtalo de nuevo.");
+    }
   };
 
   const openModal = (index) => {
@@ -87,6 +98,10 @@ const PostDetail = () => {
   const closeModal = () => setModalOpen(false);
   const prevPhoto = (e) => { e.stopPropagation(); setModalImgIndex(i => (i === 0 ? images.length - 1 : i - 1)); };
   const nextPhoto = (e) => { e.stopPropagation(); setModalImgIndex(i => (i === images.length - 1 ? 0 : i + 1)); };
+
+  // "← Mis publicaciones" solo si el post es del usuario logueado
+  const postOwnerId = post?.user_id ?? post?.author?.id ?? post?.user?.id;
+  const isOwner = isLoggedIn && postOwnerId != null && String(postOwnerId) === String(user?.id);
 
   if (loading) return (
     <div className="d-flex justify-content-center align-items-center" style={{ minHeight: "100vh", background: "#0d1117" }}>
@@ -336,28 +351,49 @@ const PostDetail = () => {
             </p>
           )}
 
-          <form onSubmit={handleSendComment} style={{
+          {isLoggedIn ? (
+            <form onSubmit={handleSendComment} style={{
+              background: `linear-gradient(135deg, rgba(0,242,254,0.06) 0%, rgba(79,172,254,0.06) 100%)`,
+              border: "1px solid rgba(0,242,254,0.25)",
+              borderRadius: "20px",
+              padding: "1.5rem",
+              marginTop: "1.5rem",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)"
+            }}>
+              <h6 style={{ marginBottom: "1rem", color: C_START, fontWeight: 700 }}>Deja tu opinión</h6>
+              <textarea
+                className="form-control mb-3"
+                rows="3"
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                placeholder="Escribe aquí..."
+                required
+                style={{ resize: "vertical", background: "rgba(0,0,0,0.25)", color: "#fff", border: "1px solid rgba(0,242,254,0.25)" }}
+              />
+              {commentError && (
+                <div className="mb-3 py-2 px-3 small rounded-3" role="alert" style={{ background: "rgba(255,78,80,0.12)", border: "1px solid rgba(255,78,80,0.3)", color: "#ffb6b6" }}>
+                  ⚠️ {commentError}
+                </div>
+              )}
+              <button type="submit" className="btn w-100 fw-bold" style={{ background: `linear-gradient(135deg, ${C_START} 0%, ${C_END} 100%)`, border: "none", color: "#000", borderRadius: "12px" }}>
+                Publicar Comentario
+              </button>
+            </form>
+          ) : (
+            <div style={{
             background: `linear-gradient(135deg, rgba(0,242,254,0.06) 0%, rgba(79,172,254,0.06) 100%)`,
             border: "1px solid rgba(0,242,254,0.25)",
             borderRadius: "20px",
             padding: "1.5rem",
             marginTop: "1.5rem",
             boxShadow: "0 4px 20px rgba(0,0,0,0.3)"
-          }}>
-            <h6 style={{ marginBottom: "1rem", color: C_START, fontWeight: 700 }}>Deja tu opinión</h6>
-            <textarea
-              className="form-control mb-3"
-              rows="3"
-              value={newComment}
-              onChange={e => setNewComment(e.target.value)}
-              placeholder="Escribe aquí..."
-              required
-              style={{ resize: "vertical", background: "rgba(0,0,0,0.25)", color: "#fff", border: "1px solid rgba(0,242,254,0.25)" }}
-            />
-            <button type="submit" className="btn w-100 fw-bold" style={{ background: `linear-gradient(135deg, ${C_START} 0%, ${C_END} 100%)`, border: "none", color: "#000", borderRadius: "12px" }}>
-              Publicar Comentario
-            </button>
-          </form>
+          }} className="text-center">
+              <h6 style={{ marginBottom: "1rem", color: C_START, fontWeight: 700 }}>Inicia sesión para dejar tu comentario</h6>
+              <button type="button" onClick={() => navigate('/login')} className="btn w-100 fw-bold" style={{ background: `linear-gradient(135deg, ${C_START} 0%, ${C_END} 100%)`, border: "none", color: "#000", borderRadius: "12px" }}>
+                Iniciar sesión
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Barra de navegación fija (sutil) */}
@@ -382,7 +418,7 @@ const PostDetail = () => {
           onMouseOut={e => e.currentTarget.style.opacity = 0.72}
         >
           <div className="d-flex gap-2">
-            {isLoggedIn ? (
+            {isOwner ? (
               <>
                 <button
                   type="button"

@@ -21,6 +21,13 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     location = db.Column(db.String(200), nullable=True)
     role = db.Column(db.String(50), default="user")  # user | moderator | editor | admin
+    # Perfil: forma del avatar y redes sociales
+    profile_shape = db.Column(db.String(20), nullable=True, default="circle")
+    social_twitter = db.Column(db.String(255), nullable=True)
+    social_instagram = db.Column(db.String(255), nullable=True)
+    social_tiktok = db.Column(db.String(255), nullable=True)
+    social_facebook = db.Column(db.String(255), nullable=True)
+    social_website = db.Column(db.String(255), nullable=True)
 
     # Relaciones con cascada — al borrar User se borran sus posts, rutas y favoritos
     posts = db.relationship("Post", back_populates="author", cascade="all, delete-orphan", lazy=True)
@@ -57,6 +64,14 @@ class User(db.Model):
             "role": self.role,
             "profile_pic": self.profile_pic,
             "location": self.location,
+            "profile_shape": self.profile_shape or "circle",
+            "social": {
+                "twitter": self.social_twitter or "",
+                "instagram": self.social_instagram or "",
+                "tiktok": self.social_tiktok or "",
+                "facebook": self.social_facebook or "",
+                "website": self.social_website or "",
+            },
         }
 
 
