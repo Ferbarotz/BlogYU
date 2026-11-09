@@ -373,9 +373,12 @@ const Register = () => {
       <style>{`
         body { background: #0d1117 !important; }
         input::placeholder { color: rgba(255,255,255,0.25) !important; }
-        input:-webkit-autofill {
-          -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.05) inset !important;
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus {
+          -webkit-box-shadow: 0 0 0 1000px #1e2229 inset !important;
           -webkit-text-fill-color: #fff !important;
+          caret-color: #fff;
         }
       `}</style>
     </div>
