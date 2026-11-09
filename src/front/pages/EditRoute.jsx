@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
+import Toast from "../components/Toast";
+import useToast from "../utils/useToast";
 
 const STEP_TYPES = [
   { id: "vuelo", label: "✈️ Vuelo" },
@@ -168,6 +170,7 @@ function DestinationSearchInput({ value, onChange, inputStyle, focusOn, focusOff
 const EditRoute = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toasts, showToast, dismissToast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -364,11 +367,11 @@ const EditRoute = () => {
         navigate("/my-routes");
       } else {
         const text = await res.text();
-        alert("Error al guardar los cambios: " + text);
+        showToast("Error al guardar los cambios: " + text, "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Error de conexión.");
+      showToast("Error de conexión.", "error");
     } finally {
       setSaving(false);
     }
@@ -404,6 +407,7 @@ const EditRoute = () => {
 
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
+      <Toast toasts={toasts} onDismiss={dismissToast} />
 
       {/* HEADER */}
       <div className="text-center text-white" style={{

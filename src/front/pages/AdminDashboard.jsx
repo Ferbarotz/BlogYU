@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE, authHeaders } from "../api/backend";
+import Toast from "../components/Toast";
+import useToast from "../utils/useToast";
 
 /**
  * AdminDashboard.jsx
@@ -13,6 +15,7 @@ import { API_BASE, authHeaders } from "../api/backend";
 
 export default function AdminDashboard() {
   const ITEMS_PER_PAGE = 10;
+  const { toasts, showToast, dismissToast } = useToast();
 
   const [stats, setStats] = useState({ users: 0, posts: 0, routes: 0 });
   const [users, setUsers] = useState([]);
@@ -224,11 +227,11 @@ useEffect(() => {
         ensurePageInRange(newUsers.length, setGlobalUsersPage, globalUsersPage);
       } else {
         const err = await resp.json().catch(() => ({}));
-        alert(err.msg || "Error al eliminar usuario");
+        showToast(err.msg || "Error al eliminar usuario", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Error al eliminar usuario");
+      showToast("Error al eliminar usuario", "error");
     } finally {
       closeConfirmModal();
     }
@@ -249,11 +252,11 @@ useEffect(() => {
         ensurePageInRange(newPosts.length, setGlobalPostsPage, globalPostsPage);
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err.msg || "Error al eliminar post");
+        showToast(err.msg || "Error al eliminar post", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Error al eliminar post");
+      showToast("Error al eliminar post", "error");
     } finally {
       closeConfirmModal();
     }
@@ -274,11 +277,11 @@ useEffect(() => {
         ensurePageInRange(newRoutes.length, setGlobalRoutesPage, globalRoutesPage);
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err.msg || "Error al eliminar ruta");
+        showToast(err.msg || "Error al eliminar ruta", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Error al eliminar ruta");
+      showToast("Error al eliminar ruta", "error");
     } finally {
       closeConfirmModal();
     }
@@ -296,11 +299,11 @@ useEffect(() => {
         setUsers((prev) => prev.map((usr) => (usr.id === u.id ? { ...usr, email_verified: true } : usr)));
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err.msg || "Error al verificar el usuario");
+        showToast(err.msg || "Error al verificar el usuario", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Error al verificar el usuario");
+      showToast("Error al verificar el usuario", "error");
     }
   };
 
@@ -316,11 +319,11 @@ useEffect(() => {
         setUsers((prev) => prev.map((usr) => (usr.id === u.id ? { ...usr, is_admin: !usr.is_admin } : usr)));
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err.msg || "Error al cambiar rol");
+        showToast(err.msg || "Error al cambiar rol", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Error al cambiar rol");
+      showToast("Error al cambiar rol", "error");
     }
   };
 
@@ -485,6 +488,7 @@ useEffect(() => {
   // Render
   return (
     <div style={{ background: "#0d1117", minHeight: "100vh", paddingBottom: "60px" }}>
+      <Toast toasts={toasts} onDismiss={dismissToast} />
       {/* HEADER */}
       <div style={{ background: "linear-gradient(135deg,#0f2027 0%,#203a43 50%,#2c5364 100%)", padding: "40px 20px 30px", position: "relative" }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "4px", background: "linear-gradient(to right,#f9d423,#ff4e50,#00f2fe)" }} />

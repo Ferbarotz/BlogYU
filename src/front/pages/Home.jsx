@@ -22,7 +22,7 @@ const Home = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Aviso en pantalla (sustituye a alert()). Puede llegar por navegación, p. ej. desde NewPost.
+  // Aviso en pantalla (en lugar de la alerta nativa del navegador). Puede llegar por navegación, p. ej. desde NewPost.
   const [notice, setNotice] = useState(location.state?.notice || null); // { type, text }
   const notify = (type, text) => setNotice({ type, text });
 
