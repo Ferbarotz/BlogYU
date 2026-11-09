@@ -92,9 +92,9 @@ const NewPost = () => {
       fd.append("title",    title);
       fd.append("content",  content);
       fd.append("category", category);
-      imageFiles.forEach(f => fd.append("images", f));
+      imageFiles.forEach((f, i) => fd.append("images", f, f.name || `foto_${i}.jpg`));
 
-      await new Promise((resolve, reject) => {
+      const result = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${API_BASE}/api/posts`);
         const headers = authHeaders();
@@ -110,7 +110,11 @@ const NewPost = () => {
         };
 
         xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            let body = {};
+            try { body = JSON.parse(xhr.responseText || "{}"); } catch {}
+            resolve(body);
+          }
           else reject(new Error(`Error ${xhr.status}: ${xhr.statusText}`));
         };
 
@@ -119,6 +123,10 @@ const NewPost = () => {
         xhr.send(fd);
       });
 
+      const rejected = Number(result?.images_rejected || 0);
+      if (rejected > 0) {
+        alert(`El post se ha publicado, pero ${rejected} imagen(es) no se pudieron guardar (formato no válido o demasiado grandes). Puedes añadirlas desde "Editar".`);
+      }
       navigate("/");
     } catch (err) {
       console.error("Error creando post:", err);
